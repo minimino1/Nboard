@@ -156,6 +156,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:layout_marginTop="2dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -186,6 +188,8 @@
                     android:id="@+id/onboardingChooseRow"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -216,6 +220,8 @@
                     android:id="@+id/onboardingLayoutRow"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -267,6 +273,17 @@
                     android:textColor="?android:attr/textColorPrimary"
                     android:textSize="16sp" />
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:fontFamily="@font/inter_variable"
+                    android:gravity="center"
+                    android:text="Needs an internet connection"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="12sp"
+                    android:alpha="0.56" />
+
                 <Space
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
@@ -277,6 +294,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:layout_marginTop="10dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -327,6 +346,8 @@
                     android:id="@+id/onboardingApiKeyInput"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:background="@android:color/transparent"
                     android:fontFamily="@font/inter_variable"
                     android:hint="Set api key here"
@@ -375,6 +396,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:layout_marginTop="10dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -436,6 +459,8 @@
                     android:id="@+id/onboardingSwipeTypingRow"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
@@ -511,6 +536,8 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:fontFamily="@font/inter_variable"
                     android:text="Fact:"
                     android:textColor="?android:attr/textColorPrimary"
@@ -521,6 +548,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
                     android:fontFamily="@font/inter_variable"
                     android:lineSpacingExtra="2dp"
                     android:text="Don't hesitate to check the settings, there is a lot of other customizations"

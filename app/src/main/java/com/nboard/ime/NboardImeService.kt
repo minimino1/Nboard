@@ -497,6 +497,7 @@ class NboardImeService : InputMethodService() {
         predictionWord3Button.background = uiDrawable(R.drawable.bg_prediction_side_chip)
 
         applySerifTypeface(modeSwitchButton)
+        modeSwitchButton.textSize = 15f
         applyInterTypeface(spaceButton)
         applySerifTypeface(aiSummarizeButton)
         applySerifTypeface(aiFixGrammarButton)
@@ -1308,6 +1309,7 @@ class NboardImeService : InputMethodService() {
                     iconTintRes = R.color.key_text,
                     backgroundRes = R.drawable.bg_special_key,
                     weight = 1.25f,
+                    textSizeSp = 16.5f,
                     useSerifTypeface = true,
                     isLast = false
                 ) {
@@ -1325,6 +1327,7 @@ class NboardImeService : InputMethodService() {
                     iconTintRes = R.color.key_text,
                     backgroundRes = R.drawable.bg_special_key,
                     weight = 1.25f,
+                    textSizeSp = 16.5f,
                     useSerifTypeface = true,
                     isLast = false
                 ) {
@@ -1373,7 +1376,7 @@ class NboardImeService : InputMethodService() {
         addSpecialKey(
             row = row3,
             label = null,
-            iconRes = if (isShiftActive()) R.drawable.ic_shift_custom_flipped else R.drawable.ic_shift_custom,
+            iconRes = if (isShiftActive()) R.drawable.ic_arrow_down_lucide else R.drawable.ic_arrow_up_lucide,
             iconTintRes = R.color.key_text,
             backgroundRes = if (manualShiftMode == ShiftMode.CAPS_LOCK) {
                 R.drawable.bg_mode_special_selected
@@ -3617,6 +3620,7 @@ class NboardImeService : InputMethodService() {
         iconTintRes: Int,
         backgroundRes: Int,
         weight: Float,
+        textSizeSp: Float = 15f,
         iconRotation: Float = 0f,
         repeatOnHold: Boolean = false,
         longPressAction: ((View, Float, Float) -> Unit)? = null,
@@ -3639,7 +3643,7 @@ class NboardImeService : InputMethodService() {
         } else {
             AppCompatButton(this).apply {
                 text = label.orEmpty()
-                textSize = 15f
+                textSize = textSizeSp
                 if (useSerifTypeface) {
                     applySerifTypeface(this)
                 } else {
