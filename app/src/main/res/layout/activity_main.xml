@@ -32,18 +32,37 @@
                 android:textColor="?android:attr/textColorPrimary"
                 android:textSize="26sp" />
 
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:contentDescription="@null"
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/koFiButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Open Ko-fi"
+                android:padding="7dp"
+                android:scaleType="centerInside"
                 android:src="@drawable/ic_cup_lucide"
                 android:tint="?android:attr/textColorPrimary" />
         </LinearLayout>
 
+        <EditText
+            android:id="@+id/testKeyboardInput"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_settings_card"
+            android:fontFamily="@font/inter_variable"
+            android:hint="Test keyboard"
+            android:inputType="text"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textColorHint="?android:attr/textColorHint"
+            android:textSize="15sp" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
+            android:layout_marginTop="22dp"
             android:fontFamily="@font/inter_variable"
             android:text="Accounts"
             android:textColor="?android:attr/textColorPrimary"
@@ -489,7 +508,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:fontFamily="@font/inter_variable"
-                    android:text="App made by @dotSlimy"
+                    android:text="App made by @MathieuDvv"
                     android:textColor="?android:attr/textColorPrimary"
                     android:textSize="15sp" />
 

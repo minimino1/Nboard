@@ -90,12 +90,16 @@ class MainActivity : AppCompatActivity() {
             showFontDialog()
         }
 
+        findViewById<View>(R.id.koFiButton).setOnClickListener {
+            openLink("https://ko-fi.com/dotslimy")
+        }
+
         findViewById<View>(R.id.librariesRow).setOnClickListener {
-            openLink("https://github.com")
+            showLibrariesDialog()
         }
 
         findViewById<View>(R.id.authorRow).setOnClickListener {
-            openLink("https://github.com/dotSlimy")
+            openLink("https://github.com/MathieuDvv")
         }
     }
 
@@ -274,6 +278,27 @@ class MainActivity : AppCompatActivity() {
             BottomKeyMode.CLIPBOARD -> "Clipboard"
             BottomKeyMode.EMOJI -> "Emoji"
         }
+    }
+
+    private fun showLibrariesDialog() {
+        val message = """
+            • AndroidX Core KTX — Apache License 2.0
+            • AndroidX AppCompat — Apache License 2.0
+            • AndroidX RecyclerView — Apache License 2.0
+            • Material Components for Android — Apache License 2.0
+            • Kotlin Coroutines (Android) — Apache License 2.0
+            • OkHttp — Apache License 2.0
+            • Kotlin Standard Library — Apache License 2.0
+
+            Design note:
+            Nboard is heavily inspired by Nothing and its aesthetic (Nothing Technology Limited).
+        """.trimIndent()
+
+        AlertDialog.Builder(this)
+            .setTitle("Libraries & licences")
+            .setMessage(message)
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     private fun applyThemePreference(mode: AppThemeMode) {
