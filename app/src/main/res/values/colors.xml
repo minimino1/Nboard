@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="keyboard_bg">#DCDCDC</color>
+    <color name="key_bg">#F4F4F4</color>
+    <color name="key_special_bg">#C8C8C8</color>
+    <color name="key_text">#1E1E1E</color>
+    <color name="space_text">#B8B8B8</color>
+    <color name="send_bg">#C8C8C8</color>
+    <color name="send_text">#1E1E1E</color>
+    <color name="ai_bg">#F7BE00</color>
+    <color name="ai_text">#1E1E1E</color>
+    <color name="ai_hint">#66321D</color>
+    <color name="ai_text_shine">#FFE082</color>
+    <color name="popup_shadow">#BABABA</color>
+    <color name="popup_selected_dark">#E3AE00</color>
+</resources>
