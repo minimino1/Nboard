@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingTop="30dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="8dp">
+
+    <FrameLayout
+        android:layout_width="94dp"
+        android:layout_height="94dp"
+        android:background="@drawable/bg_onboarding_icon"
+        android:padding="22dp">
+
+        <ImageView
+            android:id="@+id/onboardingPageIcon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_ai_custom"
+            android:tint="@color/ai_text" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/onboardingPageTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:fontFamily="@font/inter_variable"
+        android:gravity="center"
+        android:text="Title"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="28sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/onboardingPageDescription"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:fontFamily="@font/inter_variable"
+        android:gravity="center"
+        android:lineSpacingExtra="2dp"
+        android:text="Description"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="15sp" />
+</LinearLayout>

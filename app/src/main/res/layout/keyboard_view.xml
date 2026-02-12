@@ -305,6 +305,76 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/predictionRow"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/predictionWord1Button"
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:fontFamily="@font/inter_variable"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textAllCaps="false"
+            android:textColor="@color/key_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/predictionSeparator1"
+            android:layout_width="18dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="|"
+            android:textColor="@color/key_text"
+            android:textSize="15sp" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/predictionWord2Button"
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:fontFamily="@font/inter_variable"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textAllCaps="false"
+            android:textColor="@color/key_text"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/predictionSeparator2"
+            android:layout_width="18dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="|"
+            android:textColor="@color/key_text"
+            android:textSize="15sp" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/predictionWord3Button"
+            android:layout_width="0dp"
+            android:layout_height="34dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_chip"
+            android:fontFamily="@font/inter_variable"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textAllCaps="false"
+            android:textColor="@color/key_text"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/keyRowsContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

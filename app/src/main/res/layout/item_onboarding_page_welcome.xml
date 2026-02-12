@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingTop="66dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="8dp">
+
+    <FrameLayout
+        android:layout_width="108dp"
+        android:layout_height="108dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_onboarding_icon"
+        android:padding="30dp">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_ai_custom"
+            android:tint="@color/ai_text" />
+    </FrameLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:fontFamily="serif"
+        android:text="Welcome to Nboard"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="21sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:fontFamily="@font/inter_variable"
+        android:gravity="center"
+        android:text="Clean minimalist keyboard with integrated AI tools"
+        android:textColor="@color/key_text"
+        android:textSize="14sp"
+        android:alpha="0.7" />
+</LinearLayout>

@@ -1,0 +1,567 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/keyboard_bg">
+
+    <LinearLayout
+        android:id="@+id/onboardingTopArea"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="0dp">
+
+        <LinearLayout
+            android:id="@+id/onboardingWelcomeTopBar"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/onboardingHeaderBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:background="@drawable/bg_onboarding_badge"
+                android:fontFamily="@font/inter_variable"
+                android:gravity="center"
+                android:minWidth="74dp"
+                android:paddingStart="11dp"
+                android:paddingEnd="11dp"
+                android:text="onboarding"
+                android:textColor="@color/ai_text"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <Button
+                android:id="@+id/onboardingSkipButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:fontFamily="@font/inter_variable"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="0dp"
+                android:text="Skip"
+                android:textAllCaps="false"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/onboardingTitleTopBar"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/onboardingBackButton"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_gravity="center_vertical|start"
+                android:background="@android:color/transparent"
+                android:contentDescription="Back"
+                android:padding="9dp"
+                android:src="@drawable/ic_chevron_left_lucide"
+                android:tint="?android:attr/textColorPrimary" />
+
+            <TextView
+                android:id="@+id/onboardingTopTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:fontFamily="serif"
+                android:text="AI tools"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="20sp" />
+        </FrameLayout>
+
+        <androidx.viewpager2.widget.ViewPager2
+            android:id="@+id/onboardingPager"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:id="@+id/onboardingIndicatorRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:gravity="center"
+            android:paddingBottom="4dp">
+
+            <View
+                android:id="@+id/onboardingDot1"
+                android:layout_width="42dp"
+                android:layout_height="8dp"
+                android:background="@drawable/bg_onboarding_dot_active" />
+
+            <View
+                android:id="@+id/onboardingDot2"
+                android:layout_width="20dp"
+                android:layout_height="8dp"
+                android:layout_marginStart="7dp"
+                android:background="@drawable/bg_onboarding_dot_inactive" />
+
+            <View
+                android:id="@+id/onboardingDot3"
+                android:layout_width="20dp"
+                android:layout_height="8dp"
+                android:layout_marginStart="7dp"
+                android:background="@drawable/bg_onboarding_dot_inactive" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/onboardingSheetHost"
+        android:layout_width="match_parent"
+        android:layout_height="420dp"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="-28dp"
+        android:layout_marginEnd="-28dp"
+        android:background="@drawable/bg_onboarding_sheet">
+
+        <LinearLayout
+            android:id="@+id/onboardingSheetContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingStart="34dp"
+            android:paddingTop="32dp"
+            android:paddingEnd="34dp"
+            android:paddingBottom="0dp">
+
+            <LinearLayout
+                android:id="@+id/onboardingSetupSection"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <LinearLayout
+                    android:id="@+id/onboardingEnableRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="2dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="@font/inter_variable"
+                        android:text="Make it default"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_external_link_lucide"
+                        android:tint="?android:attr/textColorPrimary" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:alpha="0.2"
+                    android:background="@color/key_text" />
+
+                <LinearLayout
+                    android:id="@+id/onboardingChooseRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="@font/inter_variable"
+                        android:text="Choose keyboard"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_external_link_lucide"
+                        android:tint="?android:attr/textColorPrimary" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:alpha="0.2"
+                    android:background="@color/key_text" />
+
+                <LinearLayout
+                    android:id="@+id/onboardingLayoutRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="@font/inter_variable"
+                        android:text="Layout"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/onboardingLayoutValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:fontFamily="@font/inter_variable"
+                        android:maxLines="1"
+                        android:text="AZERTY"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down_lucide"
+                        android:tint="?android:attr/textColorPrimary" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/onboardingAiSection"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFamily="serif"
+                    android:gravity="center"
+                    android:text="Enable AI tools"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="16sp" />
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <LinearLayout
+                    android:id="@+id/onboardingAiEnabledRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_ai_custom"
+                        android:tint="?android:attr/textColorPrimary" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:fontFamily="@font/inter_variable"
+                        android:text="Gemini integration"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/onboardingAiEnabledValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:fontFamily="@font/inter_variable"
+                        android:maxLines="1"
+                        android:text="Enabled"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down_lucide"
+                        android:tint="?android:attr/textColorPrimary" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:alpha="0.2"
+                    android:background="@color/key_text" />
+
+                <EditText
+                    android:id="@+id/onboardingApiKeyInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:background="@android:color/transparent"
+                    android:fontFamily="@font/inter_variable"
+                    android:hint="Set api key here"
+                    android:imeOptions="flagNoExtractUi"
+                    android:inputType="textPassword"
+                    android:maxLines="1"
+                    android:paddingStart="0dp"
+                    android:paddingEnd="0dp"
+                    android:scrollHorizontally="true"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textColorHint="@color/space_text"
+                    android:textSize="14sp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:alpha="0.2"
+                    android:background="@color/key_text" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/onboardingBetaSection"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFamily="serif"
+                    android:gravity="center"
+                    android:text="Try them now"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="16sp" />
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <LinearLayout
+                    android:id="@+id/onboardingWordPredictionRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/inter_variable"
+                        android:text="Word prediction"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_onboarding_badge"
+                        android:fontFamily="@font/inter_variable"
+                        android:gravity="center"
+                        android:minWidth="40dp"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:text="beta"
+                        android:textColor="@color/ai_text"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Space
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/onboardingWordPredictionValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:fontFamily="@font/inter_variable"
+                        android:maxLines="1"
+                        android:text="Disabled"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down_lucide"
+                        android:tint="?android:attr/textColorPrimary" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:alpha="0.2"
+                    android:background="@color/key_text" />
+
+                <LinearLayout
+                    android:id="@+id/onboardingSwipeTypingRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/inter_variable"
+                        android:text="Swipe typing"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_onboarding_badge"
+                        android:fontFamily="@font/inter_variable"
+                        android:gravity="center"
+                        android:minWidth="40dp"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:text="beta"
+                        android:textColor="@color/ai_text"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Space
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/onboardingSwipeTypingValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:fontFamily="@font/inter_variable"
+                        android:maxLines="1"
+                        android:text="Disabled"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down_lucide"
+                        android:tint="?android:attr/textColorPrimary" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:alpha="0.2"
+                    android:background="@color/key_text" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/onboardingTransitionSection"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingBottom="44dp"
+                android:visibility="gone">
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/inter_variable"
+                    android:text="Fact:"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:fontFamily="@font/inter_variable"
+                    android:lineSpacingExtra="2dp"
+                    android:text="Don't hesitate to check the settings, there is a lot of other customizations"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="14sp"
+                    android:alpha="0.78" />
+            </LinearLayout>
+
+            <Space
+                android:id="@+id/onboardingBottomSpacer"
+                android:layout_width="match_parent"
+                android:layout_height="8dp" />
+
+            <FrameLayout
+                android:id="@+id/onboardingNavContainer"
+                android:layout_width="match_parent"
+                android:layout_height="86dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="16dp">
+
+                <ImageButton
+                    android:id="@+id/onboardingPrimaryButton"
+                    android:layout_width="92dp"
+                    android:layout_height="54dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_onboarding_nav_button"
+                    android:backgroundTint="@null"
+                    android:contentDescription="Next"
+                    android:padding="16dp"
+                    android:src="@drawable/ic_arrow_right_lucide"
+                    android:tint="@color/ai_text" />
+            </FrameLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <EditText
+        android:id="@+id/onboardingFocusInput"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:alpha="0"
+        android:importantForAccessibility="no"
+        android:inputType="textNoSuggestions"
+        android:visibility="invisible" />
+</FrameLayout>

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_settings_card"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingTop="20dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="18dp">
+
+    <TextView
+        android:id="@+id/onboardingBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="24dp"
+        android:background="@drawable/bg_ai_quick_action"
+        android:fontFamily="@font/inter_variable"
+        android:gravity="center"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="Getting started"
+        android:textColor="@color/ai_text"
+        android:textSize="12sp" />
+
+    <FrameLayout
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:layout_marginTop="14dp"
+        android:background="@drawable/bg_onboarding_icon"
+        android:padding="14dp">
+
+        <ImageView
+            android:id="@+id/onboardingIcon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_ai_custom"
+            android:tint="@color/ai_text" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/onboardingTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:fontFamily="@font/inter_variable"
+        android:text="Welcome to Nboard"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/onboardingDescription"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:fontFamily="@font/inter_variable"
+        android:lineSpacingExtra="2dp"
+        android:text="Nboard is fast, clean and built for daily typing."
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:id="@+id/onboardingDots"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <View
+            android:id="@+id/onboardingDot1"
+            android:layout_width="18dp"
+            android:layout_height="6dp"
+            android:background="@drawable/bg_onboarding_dot_active" />
+
+        <View
+            android:id="@+id/onboardingDot2"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_onboarding_dot_inactive" />
+
+        <View
+            android:id="@+id/onboardingDot3"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_onboarding_dot_inactive" />
+
+        <View
+            android:id="@+id/onboardingDot4"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_onboarding_dot_inactive" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/onboardingSkipButton"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:background="@android:color/transparent"
+            android:fontFamily="@font/inter_variable"
+            android:minWidth="0dp"
+            android:paddingStart="0dp"
+            android:paddingEnd="12dp"
+            android:text="Skip"
+            android:textAllCaps="false"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/onboardingActionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_chip"
+            android:fontFamily="@font/inter_variable"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="Open settings"
+            android:textAllCaps="false"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/onboardingNextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:background="@drawable/bg_ai_quick_action"
+            android:fontFamily="@font/inter_variable"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Next"
+            android:textAllCaps="false"
+            android:textColor="@color/ai_text"
+            android:textSize="14sp" />
+    </LinearLayout>
+</LinearLayout>

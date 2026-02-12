@@ -17,6 +17,7 @@ import android.icu.text.BreakIterator
 import android.inputmethodservice.InputMethodService
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -64,10 +65,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class NboardImeService : InputMethodService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -108,6 +115,12 @@ class NboardImeService : InputMethodService() {
     private lateinit var recentClipboardRow: LinearLayout
     private lateinit var recentClipboardChip: AppCompatButton
     private lateinit var recentClipboardChevronButton: ImageButton
+    private lateinit var predictionRow: LinearLayout
+    private lateinit var predictionWord1Button: AppCompatButton
+    private lateinit var predictionWord2Button: AppCompatButton
+    private lateinit var predictionWord3Button: AppCompatButton
+    private lateinit var predictionSeparator1: TextView
+    private lateinit var predictionSeparator2: TextView
 
     private lateinit var keyRowsContainer: LinearLayout
     private lateinit var row1: LinearLayout
@@ -139,6 +152,8 @@ class NboardImeService : InputMethodService() {
     private var keyboardLayoutMode = KeyboardLayoutMode.AZERTY
     private var keyboardLanguageMode = KeyboardLanguageMode.FRENCH
     private var keyboardFontMode = KeyboardFontMode.INTER
+    private var wordPredictionEnabled = true
+    private var swipeTypingEnabled = true
 
     private val emojiUsageCounts = mutableMapOf<String, Int>()
     private val emojiRecents = ArrayDeque<String>()
@@ -146,6 +161,10 @@ class NboardImeService : InputMethodService() {
     private val allEmojiCatalog = mutableListOf<String>()
     private var emojiGridLoadedCount = 0
     private val rejectedCorrections = mutableMapOf<String, Int>()
+    private val learnedWordFrequency = mutableMapOf<String, Int>()
+    private val learnedBigramFrequency = mutableMapOf<String, Int>()
+    private val learnedTrigramFrequency = mutableMapOf<String, Int>()
+    private var learningDirtyUpdates = 0
     @Volatile
     private var englishLexicon = Lexicon.empty()
     @Volatile
@@ -164,7 +183,23 @@ class NboardImeService : InputMethodService() {
     private var latestClipboardAtMs: Long = 0L
     private var latestClipboardDismissed = false
     private var recentClipboardExpiryJob: Job? = null
+    private var hasPredictionSuggestions = false
+    private var remotePredictionCenter: String? = null
+    private var remotePredictionRequestKey: String? = null
+    private var remotePredictionJob: Job? = null
+    private val remotePredictionCache = LinkedHashMap<String, String>(REMOTE_PREDICTION_CACHE_SIZE, 0.75f, true)
+    private val swipeLetterKeyByView = LinkedHashMap<View, String>()
+    private var activeSwipeTypingSession: SwipeTypingSession? = null
     private var activeEditorPackage: String? = null
+
+    private val remotePredictionHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(REMOTE_PREDICTION_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(REMOTE_PREDICTION_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .writeTimeout(REMOTE_PREDICTION_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(REMOTE_PREDICTION_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .build()
+    }
 
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         captureClipboardPrimary()
@@ -180,6 +215,7 @@ class NboardImeService : InputMethodService() {
 
         loadEmojiUsage()
         loadRejectedCorrections()
+        loadPredictionLearning()
         resetLexicons()
         preloadLexiconsFromAssets()
         allEmojiCatalog.clear()
@@ -201,7 +237,9 @@ class NboardImeService : InputMethodService() {
     override fun onDestroy() {
         dismissActivePopup()
         stopAiProcessingAnimations()
+        savePredictionLearning(force = true)
         recentClipboardExpiryJob?.cancel()
+        remotePredictionJob?.cancel()
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         serviceScope.cancel()
         super.onDestroy()
@@ -239,6 +277,7 @@ class NboardImeService : InputMethodService() {
         isGenerating = false
         stopAiProcessingAnimations()
         pendingAutoCorrection = null
+        activeSwipeTypingSession = null
         val newPackage = editorInfo?.packageName
         if (newPackage != activeEditorPackage) {
             isEmojiSearchMode = false
@@ -277,6 +316,11 @@ class NboardImeService : InputMethodService() {
         isAutoShiftEnabled = true
         lastShiftTapAtMs = 0L
         pendingAutoCorrection = null
+        activeSwipeTypingSession = null
+        hasPredictionSuggestions = false
+        remotePredictionCenter = null
+        remotePredictionRequestKey = null
+        remotePredictionJob?.cancel()
         if (::emojiSearchInput.isInitialized) {
             emojiSearchInput.text?.clear()
         }
@@ -289,6 +333,8 @@ class NboardImeService : InputMethodService() {
         keyboardLayoutMode = KeyboardModeSettings.loadLayoutMode(this)
         keyboardLanguageMode = KeyboardModeSettings.loadLanguageMode(this)
         keyboardFontMode = KeyboardModeSettings.loadFontMode(this)
+        wordPredictionEnabled = KeyboardModeSettings.loadWordPredictionEnabled(this)
+        swipeTypingEnabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
         interTypeface = when (keyboardFontMode) {
             KeyboardFontMode.INTER -> ResourcesCompat.getFont(this, R.font.inter_variable)
             KeyboardFontMode.ROBOTO -> Typeface.create("sans-serif", Typeface.NORMAL)
@@ -391,6 +437,12 @@ class NboardImeService : InputMethodService() {
         recentClipboardRow = root.findViewById(R.id.recentClipboardRow)
         recentClipboardChip = root.findViewById(R.id.recentClipboardChip)
         recentClipboardChevronButton = root.findViewById(R.id.recentClipboardChevronButton)
+        predictionRow = root.findViewById(R.id.predictionRow)
+        predictionWord1Button = root.findViewById(R.id.predictionWord1Button)
+        predictionWord2Button = root.findViewById(R.id.predictionWord2Button)
+        predictionWord3Button = root.findViewById(R.id.predictionWord3Button)
+        predictionSeparator1 = root.findViewById(R.id.predictionSeparator1)
+        predictionSeparator2 = root.findViewById(R.id.predictionSeparator2)
 
         keyRowsContainer = root.findViewById(R.id.keyRowsContainer)
         row1 = root.findViewById(R.id.row1)
@@ -437,6 +489,9 @@ class NboardImeService : InputMethodService() {
         emojiSearchIconButton.background = null
         recentClipboardChip.background = uiDrawable(R.drawable.bg_chip)
         recentClipboardChevronButton.background = null
+        predictionWord1Button.background = uiDrawable(R.drawable.bg_prediction_side_chip)
+        predictionWord2Button.background = uiDrawable(R.drawable.bg_chip)
+        predictionWord3Button.background = uiDrawable(R.drawable.bg_prediction_side_chip)
 
         applySerifTypeface(modeSwitchButton)
         applyInterTypeface(spaceButton)
@@ -446,6 +501,9 @@ class NboardImeService : InputMethodService() {
         applyInterTypeface(aiPromptInput)
         applyInterTypeface(emojiSearchInput)
         applyInterTypeface(recentClipboardChip)
+        applyInterTypeface(predictionWord1Button)
+        applyInterTypeface(predictionWord2Button)
+        applyInterTypeface(predictionWord3Button)
         aiPromptInput.filters = arrayOf(InputFilter.LengthFilter(AI_PILL_CHAR_LIMIT))
         aiSummarizeButton.setTextColor(uiColor(R.color.ai_text))
         aiFixGrammarButton.setTextColor(uiColor(R.color.ai_text))
@@ -453,6 +511,11 @@ class NboardImeService : InputMethodService() {
         modeSwitchButton.setTextColor(uiColor(R.color.key_text))
         spaceButton.setTextColor(uiColor(R.color.space_text))
         recentClipboardChip.setTextColor(uiColor(R.color.key_text))
+        predictionWord1Button.setTextColor(uiColor(R.color.key_text))
+        predictionWord2Button.setTextColor(uiColor(R.color.key_text))
+        predictionWord3Button.setTextColor(uiColor(R.color.key_text))
+        predictionSeparator1.setTextColor(uiColor(R.color.key_text))
+        predictionSeparator2.setTextColor(uiColor(R.color.key_text))
         aiPromptInput.setTextColor(uiColor(R.color.key_text))
         aiPromptInput.setHintTextColor(uiColor(R.color.ai_hint))
         emojiSearchInput.setTextColor(uiColor(R.color.key_text))
@@ -495,6 +558,9 @@ class NboardImeService : InputMethodService() {
         flattenView(emojiSearchIconButton)
         flattenView(recentClipboardChip)
         flattenView(recentClipboardChevronButton)
+        flattenView(predictionWord1Button)
+        flattenView(predictionWord2Button)
+        flattenView(predictionWord3Button)
     }
 
     private fun setupEmojiPanel() {
@@ -645,6 +711,16 @@ class NboardImeService : InputMethodService() {
             }
         }
 
+        bindPressAction(predictionWord1Button) {
+            commitWordPrediction(predictionWord1Button.text?.toString().orEmpty())
+        }
+        bindPressAction(predictionWord2Button) {
+            commitWordPrediction(predictionWord2Button.text?.toString().orEmpty())
+        }
+        bindPressAction(predictionWord3Button) {
+            commitWordPrediction(predictionWord3Button.text?.toString().orEmpty())
+        }
+
         aiPromptInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
                 submitAiPrompt()
@@ -716,6 +792,7 @@ class NboardImeService : InputMethodService() {
 
     private fun refreshUi() {
         renderRecentClipboardRow()
+        renderPredictionRow()
         renderEmojiSuggestions()
         val aiAllowed = isAiAllowedInCurrentContext()
         if (!aiAllowed && isAiMode) {
@@ -730,6 +807,7 @@ class NboardImeService : InputMethodService() {
         setVisibleAnimated(clipboardPanel, isClipboardOpen && !isEmojiMode)
         setVisibleAnimated(emojiPanel, isEmojiMode)
         setVisibleAnimated(recentClipboardRow, shouldShowRecentClipboardRow())
+        setVisibleAnimated(predictionRow, shouldShowPredictionRow() && hasPredictionSuggestions)
         setVisibleAnimated(keyRowsContainer, !isClipboardOpen && (!isEmojiMode || isEmojiSearchMode))
 
         setVisibleAnimated(modeSwitchButton, !isClipboardOpen)
@@ -1209,6 +1287,8 @@ class NboardImeService : InputMethodService() {
 
     private fun renderKeyRows() {
         dismissActivePopup()
+        activeSwipeTypingSession = null
+        swipeLetterKeyByView.clear()
 
         row1.removeAllViews()
         row2.removeAllViews()
@@ -1337,13 +1417,28 @@ class NboardImeService : InputMethodService() {
         labels.forEachIndexed { index, original ->
             val isLast = if (includeEndSpacing) false else index == labels.lastIndex
             val displayLabel = if (shiftAware && isShiftActive()) original.uppercase(Locale.US) else original
+            val baseToken = original.lowercase(Locale.US)
+            val swipeToken = if (
+                shiftAware &&
+                baseToken.length == 1 &&
+                baseToken.first().isLetter()
+            ) {
+                baseToken
+            } else {
+                null
+            }
             val longPress = buildVariantLongPressAction(
                 original = original,
                 shiftAware = shiftAware,
                 forcedVariant = topNumberVariants[original.lowercase(Locale.US)]
             )
+            val keyTapOnDown = when {
+                longPress != null -> false
+                swipeTypingEnabled && swipeToken != null -> false
+                else -> true
+            }
 
-            addSpecialKey(
+            val keyView = addSpecialKey(
                 row = row,
                 label = displayLabel,
                 iconRes = null,
@@ -1351,7 +1446,8 @@ class NboardImeService : InputMethodService() {
                 backgroundRes = R.drawable.bg_key,
                 weight = keyWeight,
                 longPressAction = longPress,
-                tapOnDown = longPress == null,
+                swipeToken = swipeToken,
+                tapOnDown = keyTapOnDown,
                 isLast = isLast
             ) {
                 val committed = if (shiftAware && isShiftActive()) {
@@ -1360,6 +1456,9 @@ class NboardImeService : InputMethodService() {
                     original
                 }
                 commitKeyText(committed)
+            }
+            if (swipeToken != null) {
+                swipeLetterKeyByView[keyView] = swipeToken
             }
         }
     }
@@ -1729,6 +1828,7 @@ class NboardImeService : InputMethodService() {
         activePopupWindow = null
         activeVariantSession = null
         activeSwipePopupSession = null
+        activeSwipeTypingSession = null
     }
 
     private fun hasEmojiSlot(): Boolean {
@@ -2059,6 +2159,642 @@ class NboardImeService : InputMethodService() {
         }
     }
 
+    private fun renderPredictionRow() {
+        if (!::predictionRow.isInitialized) {
+            return
+        }
+        if (!shouldShowPredictionRow()) {
+            setPredictionWords(emptyList())
+            remotePredictionJob?.cancel()
+            return
+        }
+
+        val inputConnection = currentInputConnection ?: run {
+            setPredictionWords(emptyList())
+            return
+        }
+        val beforeCursor = inputConnection
+            .getTextBeforeCursor(PREDICTION_CONTEXT_WINDOW, 0)
+            ?.toString()
+            .orEmpty()
+        val sentenceContext = extractPredictionSentenceContext(beforeCursor)
+        val fragment = extractCurrentWordFragment(beforeCursor)
+        val normalizedFragment = normalizeWord(fragment)
+        val contextLanguage = detectContextLanguage(sentenceContext.ifBlank { beforeCursor })
+        val previousWord = extractPreviousWordForPrediction(sentenceContext, fragment)
+        maybeRequestRemotePrediction(sentenceContext, fragment)
+
+        val mergedPredictions = mergeRemotePredictionCandidates(
+            buildWordPredictions(
+                prefix = normalizedFragment,
+                previousWord = previousWord,
+                contextLanguage = contextLanguage,
+                sentenceContext = sentenceContext
+            ),
+            fragment = fragment
+        )
+
+        val predictions = mergedPredictions
+            .map { candidate ->
+                if (fragment.isBlank()) {
+                    if (isAutoShiftEnabled) {
+                        candidate.replaceFirstChar { it.uppercase(Locale.US) }
+                    } else {
+                        candidate
+                    }
+                } else {
+                    applyWordCase(candidate, fragment)
+                }
+            }
+            .filter { it.isNotBlank() && !it.equals(fragment, ignoreCase = true) }
+            .distinctBy { it.lowercase(Locale.US) }
+            .take(MAX_PREDICTION_CANDIDATES)
+
+        setPredictionWords(predictions)
+    }
+
+    private fun maybeRequestRemotePrediction(sentenceContext: String, fragment: String) {
+        if (fragment.isNotBlank()) {
+            remotePredictionCenter = null
+            remotePredictionRequestKey = null
+            remotePredictionJob?.cancel()
+            return
+        }
+
+        val prompt = buildRemotePredictionPrompt(sentenceContext) ?: run {
+            remotePredictionCenter = null
+            remotePredictionRequestKey = null
+            remotePredictionJob?.cancel()
+            return
+        }
+
+        if (remotePredictionRequestKey == prompt) {
+            return
+        }
+
+        remotePredictionRequestKey = prompt
+        remotePredictionCenter = remotePredictionCache[prompt]
+        if (!remotePredictionCenter.isNullOrBlank()) {
+            return
+        }
+
+        remotePredictionJob?.cancel()
+        remotePredictionJob = serviceScope.launch {
+            delay(REMOTE_PREDICTION_DEBOUNCE_MS)
+            val predicted = withContext(Dispatchers.IO) {
+                requestRemoteQooglePrediction(prompt)
+            } ?: return@launch
+
+            if (remotePredictionRequestKey != prompt) {
+                return@launch
+            }
+            remotePredictionCenter = predicted
+            remotePredictionCache[prompt] = predicted
+            while (remotePredictionCache.size > REMOTE_PREDICTION_CACHE_SIZE) {
+                val oldest = remotePredictionCache.keys.firstOrNull() ?: break
+                remotePredictionCache.remove(oldest)
+            }
+            if (::predictionRow.isInitialized) {
+                renderPredictionRow()
+                setVisibleAnimated(predictionRow, shouldShowPredictionRow() && hasPredictionSuggestions)
+            }
+        }
+    }
+
+    private fun buildRemotePredictionPrompt(sentenceContext: String): String? {
+        val context = sentenceContext.trim()
+        if (context.isBlank()) {
+            return null
+        }
+        val tokens = extractPredictionTokens(context).takeLast(REMOTE_PREDICTION_TOKEN_WINDOW)
+        if (tokens.isEmpty()) {
+            return null
+        }
+        return tokens.joinToString(separator = " ")
+    }
+
+    private fun requestRemoteQooglePrediction(prompt: String): String? {
+        return try {
+            val payload = JSONObject().apply {
+                put("inputs", prompt)
+                put("options", JSONObject().put("wait_for_model", false))
+            }.toString()
+
+            val request = Request.Builder()
+                .url(HF_QOOGLE_MODEL_ENDPOINT)
+                .header("Accept", "application/json")
+                .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            remotePredictionHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return null
+                }
+                parseRemotePredictionWord(body, prompt)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseRemotePredictionWord(body: String, prompt: String): String? {
+        if (body.isBlank()) {
+            return null
+        }
+        return runCatching {
+            val trimmed = body.trim()
+            val rawOutput = when {
+                trimmed.startsWith("[") -> {
+                    val array = JSONArray(trimmed)
+                    if (array.length() == 0) {
+                        return null
+                    }
+                    when (val first = array.opt(0)) {
+                        is JSONObject -> first.optString("generated_text")
+                        is String -> first
+                        else -> null
+                    }
+                }
+                trimmed.startsWith("{") -> {
+                    val obj = JSONObject(trimmed)
+                    if (obj.has("error")) {
+                        null
+                    } else {
+                        obj.optString("generated_text")
+                    }
+                }
+                else -> trimmed
+            }
+            sanitizeRemotePredictionWord(rawOutput, prompt)
+        }.getOrNull()
+    }
+
+    private fun sanitizeRemotePredictionWord(rawOutput: String?, prompt: String): String? {
+        if (rawOutput.isNullOrBlank()) {
+            return null
+        }
+        var candidateText = rawOutput.trim()
+        if (candidateText.startsWith(prompt, ignoreCase = true)) {
+            candidateText = candidateText.substring(prompt.length).trim()
+        }
+        if (candidateText.isBlank()) {
+            return null
+        }
+        val match = WORD_TOKEN_REGEX.find(candidateText) ?: return null
+        val normalized = normalizeWord(match.value).trim('\'', '’')
+        return if (normalized.length >= 2) normalized else null
+    }
+
+    private fun mergeRemotePredictionCandidates(localCandidates: List<String>, fragment: String): List<String> {
+        val merged = localCandidates.toMutableList()
+        val remote = remotePredictionCenter?.takeIf { it.isNotBlank() }
+        if (!remote.isNullOrBlank()) {
+            val accepted = if (fragment.isBlank()) {
+                localCandidates.isEmpty() || localCandidates.any { it.equals(remote, ignoreCase = true) }
+            } else {
+                foldWord(remote).startsWith(foldWord(fragment))
+            }
+            if (accepted) {
+                merged.removeAll { it.equals(remote, ignoreCase = true) }
+                merged.add(0, remote)
+            }
+        }
+        return merged.take(MAX_PREDICTION_CANDIDATES)
+    }
+
+    private fun setPredictionWords(words: List<String>) {
+        val slotValues = when (words.size) {
+            0 -> listOf("", "", "")
+            1 -> listOf("", words[0], "")
+            2 -> listOf(words[1], words[0], "")
+            else -> listOf(words[1], words[0], words[2])
+        }
+        val slots = listOf(predictionWord1Button, predictionWord2Button, predictionWord3Button)
+        slots.forEachIndexed { index, button ->
+            val value = slotValues.getOrNull(index).orEmpty()
+            button.text = value
+            button.isEnabled = value.isNotBlank()
+            button.alpha = if (value.isNotBlank()) 1f else 0f
+        }
+        predictionSeparator1.alpha = if (slotValues[0].isNotBlank() && slotValues[1].isNotBlank()) 0.9f else 0f
+        predictionSeparator2.alpha = if (slotValues[2].isNotBlank() && slotValues[1].isNotBlank()) 0.9f else 0f
+        hasPredictionSuggestions = words.isNotEmpty()
+    }
+
+    private fun shouldShowPredictionRow(): Boolean {
+        if (!wordPredictionEnabled) {
+            return false
+        }
+        if (isAiMode || isClipboardOpen || isEmojiMode || isNumbersMode || isGenerating) {
+            return false
+        }
+        return !shouldShowRecentClipboardRow()
+    }
+
+    private fun buildWordPredictions(
+        prefix: String,
+        previousWord: String?,
+        contextLanguage: KeyboardLanguageMode?,
+        sentenceContext: String
+    ): List<String> {
+        val normalizedPrefix = normalizeWord(prefix)
+        val foldedPrefix = foldWord(normalizedPrefix)
+        val rawSentenceTokens = extractPredictionTokens(sentenceContext)
+        val sentenceTokens = if (
+            normalizedPrefix.isNotBlank() &&
+            rawSentenceTokens.lastOrNull() == normalizedPrefix
+        ) {
+            rawSentenceTokens.dropLast(1)
+        } else {
+            rawSentenceTokens
+        }
+        val fallback = defaultPredictionWords(contextLanguage)
+
+        val scored = HashMap<String, Int>()
+        val (previousTwoFromContext, previousOneFromContext) =
+            extractPreviousWordsForPrediction(sentenceContext, prefix)
+        val normalizedPrevious = previousWord?.let(::normalizeWord)?.takeIf { it.length >= 2 }
+            ?: previousOneFromContext
+
+        if (!previousTwoFromContext.isNullOrBlank() && !normalizedPrevious.isNullOrBlank()) {
+            addContextualTrigramCandidates(previousTwoFromContext, normalizedPrevious, foldedPrefix, scored)
+        }
+        if (normalizedPrevious != null) {
+            addContextualBigramCandidates(normalizedPrevious, foldedPrefix, scored)
+        }
+        addSentenceContextBigramCandidates(sentenceTokens, foldedPrefix, scored)
+        addStaticContextHintCandidates(
+            previousTwo = previousTwoFromContext,
+            previousOne = normalizedPrevious,
+            foldedPrefix = foldedPrefix,
+            contextLanguage = contextLanguage,
+            scored = scored
+        )
+        addLearnedWordCandidates(foldedPrefix, scored)
+
+        listOf(
+            KeyboardLanguageMode.FRENCH to frenchLexicon,
+            KeyboardLanguageMode.ENGLISH to englishLexicon
+        ).forEach { (language, lexicon) ->
+            if (!isLanguageEnabled(language)) {
+                return@forEach
+            }
+
+            val source = when {
+                foldedPrefix.isBlank() -> staticLanguageFallbackWords(language, contextLanguage)
+                foldedPrefix.length >= 2 -> lexicon.byPrefix2[foldedPrefix.take(2)].orEmpty()
+                else -> lexicon.byFirst[foldedPrefix.first()].orEmpty()
+            }
+            if (source.isEmpty()) {
+                return@forEach
+            }
+
+            val languagePenalty = languageBiasPenalty(language, contextLanguage) * 26
+            var scanned = 0
+            source.forEach { candidateWord ->
+                if (scanned >= WORD_PREDICTION_SCAN_LIMIT) {
+                    return@forEach
+                }
+                scanned++
+
+                addPredictionCandidate(
+                    scored = scored,
+                    candidateWord = candidateWord,
+                    foldedPrefix = foldedPrefix,
+                    language = language,
+                    languagePenalty = languagePenalty,
+                    previousWord = normalizedPrevious
+                )
+            }
+        }
+
+        val ranked = scored
+            .entries
+            .sortedWith(
+                compareBy<Map.Entry<String, Int>> { it.value }
+                    .thenBy { it.key.length }
+                    .thenBy { it.key }
+            )
+            .map { it.key }
+            .filterNot { candidate ->
+                foldedPrefix.isBlank() &&
+                    !normalizedPrevious.isNullOrBlank() &&
+                    candidate.equals(normalizedPrevious, ignoreCase = true)
+            }
+            .toMutableList()
+
+        fallback.forEach { candidate ->
+            if (ranked.size >= MAX_PREDICTION_CANDIDATES) {
+                return@forEach
+            }
+            if (candidate.equals(normalizedPrefix, ignoreCase = true)) {
+                return@forEach
+            }
+            if (ranked.none { it.equals(candidate, ignoreCase = true) }) {
+                ranked.add(candidate)
+            }
+        }
+
+        return ranked.take(MAX_PREDICTION_CANDIDATES)
+    }
+
+    private fun staticLanguageFallbackWords(
+        language: KeyboardLanguageMode,
+        contextLanguage: KeyboardLanguageMode?
+    ): List<String> {
+        return when (language) {
+            KeyboardLanguageMode.FRENCH ->
+                if (contextLanguage == KeyboardLanguageMode.ENGLISH) FRENCH_DEFAULT_PREDICTIONS.take(4) else FRENCH_DEFAULT_PREDICTIONS
+            KeyboardLanguageMode.ENGLISH ->
+                if (contextLanguage == KeyboardLanguageMode.FRENCH) ENGLISH_DEFAULT_PREDICTIONS.take(4) else ENGLISH_DEFAULT_PREDICTIONS
+            KeyboardLanguageMode.BOTH -> MIXED_DEFAULT_PREDICTIONS
+        }
+    }
+
+    private fun addContextualTrigramCandidates(
+        previousTwo: String,
+        previousOne: String,
+        foldedPrefix: String,
+        scored: MutableMap<String, Int>
+    ) {
+        val prefix = "${normalizeWord(previousTwo)}|${normalizeWord(previousOne)}|"
+        learnedTrigramFrequency
+            .asSequence()
+            .filter { (key, _) -> key.startsWith(prefix) }
+            .sortedByDescending { it.value }
+            .take(MAX_PREDICTION_TRIGRAM_CANDIDATES)
+            .forEach { (key, count) ->
+                val candidate = key.substringAfterLast('|')
+                if (candidate.isBlank()) {
+                    return@forEach
+                }
+                val foldedCandidate = foldWord(candidate)
+                if (foldedPrefix.isNotBlank() && !foldedCandidate.startsWith(foldedPrefix)) {
+                    return@forEach
+                }
+                val score = 72 - minOf(MAX_PREDICTION_TRIGRAM_BOOST, count * 24)
+                val existing = scored[candidate]
+                if (existing == null || score < existing) {
+                    scored[candidate] = score
+                }
+            }
+    }
+
+    private fun addSentenceContextBigramCandidates(
+        sentenceTokens: List<String>,
+        foldedPrefix: String,
+        scored: MutableMap<String, Int>
+    ) {
+        if (sentenceTokens.isEmpty()) {
+            return
+        }
+
+        sentenceTokens
+            .takeLast(PREDICTION_CONTEXT_CHAIN_WINDOW)
+            .reversed()
+            .forEachIndexed { distance, contextWord ->
+                val keyPrefix = "${normalizeWord(contextWord)}|"
+                val distancePenalty = distance * 22
+                learnedBigramFrequency
+                    .asSequence()
+                    .filter { (key, _) -> key.startsWith(keyPrefix) }
+                    .sortedByDescending { it.value }
+                    .take(MAX_PREDICTION_CONTEXT_CHAIN_CANDIDATES)
+                    .forEach { (key, count) ->
+                        val candidate = key.substringAfter('|')
+                        if (candidate.isBlank()) {
+                            return@forEach
+                        }
+                        val foldedCandidate = foldWord(candidate)
+                        if (foldedPrefix.isNotBlank() && !foldedCandidate.startsWith(foldedPrefix)) {
+                            return@forEach
+                        }
+                        val score = 128 + distancePenalty - minOf(MAX_PREDICTION_BIGRAM_BOOST, count * 18)
+                        val existing = scored[candidate]
+                        if (existing == null || score < existing) {
+                            scored[candidate] = score
+                        }
+                    }
+            }
+    }
+
+    private fun addStaticContextHintCandidates(
+        previousTwo: String?,
+        previousOne: String?,
+        foldedPrefix: String,
+        contextLanguage: KeyboardLanguageMode?,
+        scored: MutableMap<String, Int>
+    ) {
+        val hints = staticContextHintWords(previousTwo, previousOne, contextLanguage)
+        hints.forEachIndexed { index, candidate ->
+            if (candidate.length < 2) {
+                return@forEachIndexed
+            }
+            val foldedCandidate = foldWord(candidate)
+            if (foldedPrefix.isNotBlank() && !foldedCandidate.startsWith(foldedPrefix)) {
+                return@forEachIndexed
+            }
+            val score = 170 + index * 6
+            val existing = scored[candidate]
+            if (existing == null || score < existing) {
+                scored[candidate] = score
+            }
+        }
+    }
+
+    private fun staticContextHintWords(
+        previousTwo: String?,
+        previousOne: String?,
+        contextLanguage: KeyboardLanguageMode?
+    ): List<String> {
+        val keys = mutableListOf<String>()
+        if (!previousTwo.isNullOrBlank() && !previousOne.isNullOrBlank()) {
+            keys += "${normalizeWord(previousTwo)} ${normalizeWord(previousOne)}"
+        }
+        if (!previousOne.isNullOrBlank()) {
+            keys += normalizeWord(previousOne)
+        }
+
+        val candidateLanguages = when (keyboardLanguageMode) {
+            KeyboardLanguageMode.FRENCH -> listOf(KeyboardLanguageMode.FRENCH)
+            KeyboardLanguageMode.ENGLISH -> listOf(KeyboardLanguageMode.ENGLISH)
+            KeyboardLanguageMode.BOTH -> when (contextLanguage) {
+                KeyboardLanguageMode.FRENCH -> listOf(KeyboardLanguageMode.FRENCH, KeyboardLanguageMode.ENGLISH)
+                KeyboardLanguageMode.ENGLISH -> listOf(KeyboardLanguageMode.ENGLISH, KeyboardLanguageMode.FRENCH)
+                else -> listOf(KeyboardLanguageMode.FRENCH, KeyboardLanguageMode.ENGLISH)
+            }
+        }
+
+        val results = LinkedHashSet<String>()
+        candidateLanguages.forEach { language ->
+            val source = when (language) {
+                KeyboardLanguageMode.FRENCH -> FRENCH_CONTEXT_HINTS
+                KeyboardLanguageMode.ENGLISH -> ENGLISH_CONTEXT_HINTS
+                KeyboardLanguageMode.BOTH -> emptyMap<String, List<String>>()
+            }
+            keys.forEach { key ->
+                source[key]?.forEach { results.add(it) }
+            }
+            source["*"]?.forEach { results.add(it) }
+        }
+        return results.take(24)
+    }
+
+    private fun addPredictionCandidate(
+        scored: MutableMap<String, Int>,
+        candidateWord: String,
+        foldedPrefix: String,
+        language: KeyboardLanguageMode?,
+        languagePenalty: Int,
+        previousWord: String?
+    ) {
+        val normalizedCandidate = normalizeWord(candidateWord)
+        if (normalizedCandidate.length < 2) {
+            return
+        }
+        val foldedCandidate = foldWord(normalizedCandidate)
+        if (foldedPrefix.isNotBlank()) {
+            if (!foldedCandidate.startsWith(foldedPrefix) || foldedCandidate == foldedPrefix) {
+                return
+            }
+        }
+
+        val suffixGap = (foldedCandidate.length - foldedPrefix.length).coerceAtLeast(0)
+        var score = languagePenalty + suffixGap * 4 + normalizedCandidate.length * 2
+        if (foldedPrefix.isBlank()) {
+            // For next-word prediction, prioritize contextual models over generic lexicon fallback.
+            score += 220
+        }
+
+        val unigram = learnedWordFrequency[normalizedCandidate] ?: 0
+        if (unigram > 0) {
+            score -= minOf(MAX_PREDICTION_UNIGRAM_BOOST, unigram * 8)
+        }
+
+        if (!previousWord.isNullOrBlank()) {
+            val bigram = learnedBigramFrequency[predictionBigramKey(previousWord, normalizedCandidate)] ?: 0
+            if (bigram > 0) {
+                score -= minOf(MAX_PREDICTION_BIGRAM_BOOST, bigram * 18)
+            }
+        }
+
+        if (language == KeyboardLanguageMode.FRENCH && FRENCH_WORDS.contains(normalizedCandidate)) {
+            score -= 10
+        }
+        if (language == KeyboardLanguageMode.ENGLISH && ENGLISH_WORDS.contains(normalizedCandidate)) {
+            score -= 10
+        }
+
+        val existing = scored[normalizedCandidate]
+        if (existing == null || score < existing) {
+            scored[normalizedCandidate] = score
+        }
+    }
+
+    private fun addContextualBigramCandidates(
+        previousWord: String,
+        foldedPrefix: String,
+        scored: MutableMap<String, Int>
+    ) {
+        val prefix = "$previousWord|"
+        learnedBigramFrequency
+            .asSequence()
+            .filter { (key, _) -> key.startsWith(prefix) }
+            .sortedByDescending { it.value }
+            .take(MAX_PREDICTION_BIGRAM_CANDIDATES)
+            .forEach { (key, count) ->
+                val candidate = key.substringAfter('|')
+                if (candidate.isBlank()) {
+                    return@forEach
+                }
+                val foldedCandidate = foldWord(candidate)
+                if (foldedPrefix.isNotBlank() && !foldedCandidate.startsWith(foldedPrefix)) {
+                    return@forEach
+                }
+                val score = 120 - minOf(MAX_PREDICTION_BIGRAM_BOOST, count * 20)
+                val existing = scored[candidate]
+                if (existing == null || score < existing) {
+                    scored[candidate] = score
+                }
+            }
+    }
+
+    private fun addLearnedWordCandidates(foldedPrefix: String, scored: MutableMap<String, Int>) {
+        learnedWordFrequency
+            .asSequence()
+            .filter { (word, _) ->
+                if (foldedPrefix.isBlank()) {
+                    true
+                } else {
+                    foldWord(word).startsWith(foldedPrefix)
+                }
+            }
+            .sortedByDescending { it.value }
+            .take(MAX_PREDICTION_LEARNED_CANDIDATES)
+            .forEach { (word, count) ->
+                val base = 180 - minOf(MAX_PREDICTION_UNIGRAM_BOOST, count * 10)
+                val existing = scored[word]
+                if (existing == null || base < existing) {
+                    scored[word] = base
+                }
+            }
+    }
+
+    private fun defaultPredictionWords(contextLanguage: KeyboardLanguageMode?): List<String> {
+        return when (keyboardLanguageMode) {
+            KeyboardLanguageMode.FRENCH -> FRENCH_DEFAULT_PREDICTIONS
+            KeyboardLanguageMode.ENGLISH -> ENGLISH_DEFAULT_PREDICTIONS
+            KeyboardLanguageMode.BOTH -> when (contextLanguage) {
+                KeyboardLanguageMode.FRENCH -> FRENCH_DEFAULT_PREDICTIONS + ENGLISH_DEFAULT_PREDICTIONS
+                KeyboardLanguageMode.ENGLISH -> ENGLISH_DEFAULT_PREDICTIONS + FRENCH_DEFAULT_PREDICTIONS
+                else -> MIXED_DEFAULT_PREDICTIONS
+            }
+        }
+    }
+
+    private fun extractPreviousWordForPrediction(beforeCursor: String, currentFragment: String): String? {
+        return extractPreviousWordsForPrediction(beforeCursor, currentFragment).second
+    }
+
+    private fun extractPreviousWordsForPrediction(
+        beforeCursor: String,
+        currentFragment: String
+    ): Pair<String?, String?> {
+        if (beforeCursor.isBlank()) {
+            return null to null
+        }
+        val reduced = if (
+            currentFragment.isNotBlank() &&
+            beforeCursor.endsWith(currentFragment, ignoreCase = true)
+        ) {
+            beforeCursor.dropLast(currentFragment.length)
+        } else {
+            beforeCursor
+        }
+        val tokens = extractPredictionTokens(reduced)
+        if (tokens.isEmpty()) {
+            return null to null
+        }
+        val previous1 = tokens.lastOrNull()
+        val previous2 = if (tokens.size >= 2) tokens[tokens.lastIndex - 1] else null
+        return previous2 to previous1
+    }
+
+    private fun extractPredictionSentenceContext(beforeCursor: String): String {
+        if (beforeCursor.isBlank()) {
+            return ""
+        }
+        val lastBoundary = maxOf(
+            beforeCursor.lastIndexOf('.'),
+            beforeCursor.lastIndexOf('!'),
+            beforeCursor.lastIndexOf('?'),
+            beforeCursor.lastIndexOf('\n')
+        )
+        val startIndex = if (lastBoundary >= 0) lastBoundary + 1 else 0
+        return beforeCursor.substring(startIndex).trimStart()
+    }
+
     private fun shouldShowRecentClipboardRow(): Boolean {
         if (isAiMode || isClipboardOpen || isEmojiMode) {
             return false
@@ -2154,6 +2890,10 @@ class NboardImeService : InputMethodService() {
         refreshAutoShiftFromContext()
         if ((forceRerender || previous != isAutoShiftEnabled) && !isNumbersMode && !isEmojiMode && !isClipboardOpen) {
             renderKeyRows()
+        }
+        if (::predictionRow.isInitialized) {
+            renderPredictionRow()
+            setVisibleAnimated(predictionRow, shouldShowPredictionRow() && hasPredictionSuggestions)
         }
     }
 
@@ -2303,6 +3043,321 @@ class NboardImeService : InputMethodService() {
         inputConnection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_RIGHT))
     }
 
+    private fun shouldHandleSwipeTyping(): Boolean {
+        if (!swipeTypingEnabled) {
+            return false
+        }
+        if (isNumbersMode || isEmojiMode || isClipboardOpen || isAiMode || isGenerating) {
+            return false
+        }
+        return true
+    }
+
+    private fun beginSwipeTyping(anchorView: View, token: String, rawX: Float, rawY: Float): Boolean {
+        if (token.isBlank()) {
+            return false
+        }
+        if (!shouldHandleSwipeTyping()) {
+            return false
+        }
+        val now = SystemClock.elapsedRealtime()
+        activeSwipeTypingSession = SwipeTypingSession(
+            ownerView = anchorView,
+            rawStartX = rawX,
+            rawStartY = rawY,
+            tokens = mutableListOf(token),
+            dwellDurationsMs = mutableListOf(0L),
+            lastTokenEnteredAtMs = now,
+            isSwiping = false
+        )
+        return true
+    }
+
+    private fun cancelSwipeTyping() {
+        activeSwipeTypingSession = null
+    }
+
+    private fun updateSwipeTyping(rawX: Float, rawY: Float): Boolean {
+        val session = activeSwipeTypingSession ?: return false
+        if (!shouldHandleSwipeTyping()) {
+            cancelSwipeTyping()
+            return false
+        }
+        val dx = rawX - session.rawStartX
+        val dy = rawY - session.rawStartY
+        val distance = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+        if (!session.isSwiping && distance >= dp(SWIPE_TYPING_DEADZONE_DP).toFloat()) {
+            session.isSwiping = true
+        }
+        if (!session.isSwiping) {
+            return false
+        }
+
+        val token = findSwipeTokenAt(rawX, rawY) ?: return true
+        val last = session.tokens.lastOrNull()
+        if (token != last) {
+            val now = SystemClock.elapsedRealtime()
+            val lastIndex = session.dwellDurationsMs.lastIndex
+            if (lastIndex >= 0) {
+                val delta = (now - session.lastTokenEnteredAtMs).coerceAtLeast(0L)
+                session.dwellDurationsMs[lastIndex] = session.dwellDurationsMs[lastIndex] + delta
+            }
+            session.tokens.add(token)
+            session.dwellDurationsMs.add(0L)
+            session.lastTokenEnteredAtMs = now
+            performKeyHaptic(session.ownerView)
+        }
+        return true
+    }
+
+    private fun finishSwipeTypingAndCommit(): Boolean {
+        val session = activeSwipeTypingSession ?: return false
+        activeSwipeTypingSession = null
+        if (!session.isSwiping) {
+            return false
+        }
+        val now = SystemClock.elapsedRealtime()
+        val lastIndex = session.dwellDurationsMs.lastIndex
+        if (lastIndex >= 0) {
+            val delta = (now - session.lastTokenEnteredAtMs).coerceAtLeast(0L)
+            session.dwellDurationsMs[lastIndex] = session.dwellDurationsMs[lastIndex] + delta
+        }
+
+        val intentTokens = extractSwipeIntentTokens(session)
+        if (intentTokens.size < 2) {
+            return false
+        }
+        val resolved = resolveSwipeWord(intentTokens).orEmpty()
+        if (resolved.isBlank()) {
+            return false
+        }
+        commitSwipeWord(resolved)
+        return true
+    }
+
+    private fun findSwipeTokenAt(rawX: Float, rawY: Float): String? {
+        swipeLetterKeyByView.forEach { (view, token) ->
+            if (!view.isShown || view.width <= 0 || view.height <= 0) {
+                return@forEach
+            }
+            val location = IntArray(2)
+            view.getLocationOnScreen(location)
+            val left = location[0].toFloat()
+            val top = location[1].toFloat()
+            val right = left + view.width
+            val bottom = top + view.height
+            if (rawX in left..right && rawY in top..bottom) {
+                return token
+            }
+        }
+        return null
+    }
+
+    private fun extractSwipeIntentTokens(session: SwipeTypingSession): List<String> {
+        if (session.tokens.isEmpty()) {
+            return emptyList()
+        }
+        val reduced = mutableListOf<String>()
+        val lastIndex = session.tokens.lastIndex
+        session.tokens.forEachIndexed { index, rawToken ->
+            val token = normalizeWord(rawToken)
+            if (token.length != 1 || !token.first().isLetter()) {
+                return@forEachIndexed
+            }
+            val dwell = session.dwellDurationsMs.getOrNull(index) ?: 0L
+            val keep = index == 0 || index == lastIndex || dwell >= SWIPE_DWELL_COMMIT_MS
+            if (keep) {
+                if (reduced.lastOrNull() != token) {
+                    reduced.add(token)
+                }
+            }
+        }
+
+        if (reduced.size < 3 && session.tokens.size >= 3) {
+            val middleRange = 1 until session.tokens.lastIndex
+            val bestMiddle = middleRange
+                .maxByOrNull { session.dwellDurationsMs.getOrNull(it) ?: 0L }
+                ?.let { session.tokens[it] }
+                ?.let(::normalizeWord)
+                ?.takeIf { it.length == 1 && it.first().isLetter() }
+            if (!bestMiddle.isNullOrBlank()) {
+                val first = reduced.firstOrNull()
+                val last = reduced.lastOrNull()
+                if (first != null && last != null && bestMiddle != first && bestMiddle != last) {
+                    reduced.clear()
+                    reduced.add(first)
+                    reduced.add(bestMiddle)
+                    reduced.add(last)
+                }
+            }
+        }
+        return reduced
+    }
+
+    private fun resolveSwipeWord(tokens: List<String>): String? {
+        if (tokens.isEmpty()) {
+            return null
+        }
+        val normalizedPath = tokens
+            .map { normalizeWord(it) }
+            .filter { it.length == 1 && it.first().isLetter() }
+            .joinToString("")
+        if (normalizedPath.length < 2) {
+            return null
+        }
+
+        val foldedPath = foldWord(normalizedPath)
+        val collapsedPath = collapseRepeats(foldedPath, maxRepeat = 1)
+        val pathFirst = collapsedPath.firstOrNull() ?: return null
+        val pathLast = collapsedPath.lastOrNull() ?: return null
+
+        val inputConnection = currentInputConnection
+        val beforeCursor = inputConnection
+            ?.getTextBeforeCursor(PREDICTION_CONTEXT_WINDOW, 0)
+            ?.toString()
+            .orEmpty()
+        val sentenceContext = extractPredictionSentenceContext(beforeCursor)
+        val (previousWord2, previousWord1) = extractPreviousWordsForPrediction(sentenceContext, "")
+
+        val candidates = LinkedHashSet<String>()
+        learnedWordFrequency.entries
+            .asSequence()
+            .filter { (word, _) -> word.firstOrNull() == pathFirst }
+            .sortedByDescending { it.value }
+            .take(SWIPE_LEARNED_SCAN_LIMIT)
+            .forEach { (word, _) -> candidates.add(word) }
+
+        listOf(
+            KeyboardLanguageMode.FRENCH to frenchLexicon,
+            KeyboardLanguageMode.ENGLISH to englishLexicon
+        ).forEach { (language, lexicon) ->
+            if (!isLanguageEnabled(language)) {
+                return@forEach
+            }
+            lexicon.byFirst[pathFirst]
+                .orEmpty()
+                .asSequence()
+                .take(SWIPE_LEXICON_SCAN_LIMIT)
+                .forEach { candidates.add(it) }
+        }
+
+        var bestWord: String? = null
+        var bestScore = Int.MAX_VALUE
+        var secondBestScore = Int.MAX_VALUE
+
+        candidates.forEach { candidate ->
+            val normalizedCandidate = normalizeWord(candidate)
+            if (normalizedCandidate.length < 2) {
+                return@forEach
+            }
+            val foldedCandidate = foldWord(normalizedCandidate)
+            if (foldedCandidate.isBlank() || foldedCandidate.firstOrNull() != pathFirst) {
+                return@forEach
+            }
+
+            val collapsedCandidate = collapseRepeats(foldedCandidate, maxRepeat = 1)
+            val distanceLimit = (SWIPE_DISTANCE_BASE_LIMIT + collapsedPath.length / 2).coerceAtMost(10)
+            val shapeDistance = levenshteinDistanceBounded(collapsedPath, collapsedCandidate, distanceLimit)
+            if (shapeDistance == Int.MAX_VALUE) {
+                return@forEach
+            }
+
+            var score = shapeDistance * 14
+            score += kotlin.math.abs(collapsedCandidate.length - collapsedPath.length) * 3
+            if (collapsedCandidate.lastOrNull() != pathLast) {
+                score += 12
+            }
+            if (!isSubsequence(collapsedPath, collapsedCandidate)) {
+                score += 16
+            }
+
+            val unigram = learnedWordFrequency[normalizedCandidate] ?: 0
+            if (unigram > 0) {
+                score -= minOf(90, unigram * 8)
+            }
+
+            if (!previousWord1.isNullOrBlank()) {
+                val bigram = learnedBigramFrequency[predictionBigramKey(previousWord1, normalizedCandidate)] ?: 0
+                if (bigram > 0) {
+                    score -= minOf(120, bigram * 20)
+                }
+            }
+            if (!previousWord2.isNullOrBlank() && !previousWord1.isNullOrBlank()) {
+                val trigram = learnedTrigramFrequency[
+                    predictionTrigramKey(previousWord2, previousWord1, normalizedCandidate)
+                ] ?: 0
+                if (trigram > 0) {
+                    score -= minOf(170, trigram * 24)
+                }
+            }
+
+            if (FRENCH_WORDS.contains(normalizedCandidate) || ENGLISH_WORDS.contains(normalizedCandidate)) {
+                score -= 6
+            }
+
+            if (score < bestScore) {
+                secondBestScore = bestScore
+                bestScore = score
+                bestWord = normalizedCandidate
+            } else if (score < secondBestScore) {
+                secondBestScore = score
+            }
+        }
+
+        if (!bestWord.isNullOrBlank()) {
+            val margin = secondBestScore - bestScore
+            val confident = when {
+                bestScore <= SWIPE_CONFIDENT_SCORE -> true
+                margin >= SWIPE_MIN_SCORE_MARGIN -> true
+                else -> false
+            }
+            if (confident) {
+                return bestWord
+            }
+        }
+        return null
+    }
+
+    private fun isSubsequence(pattern: String, source: String): Boolean {
+        if (pattern.isEmpty()) {
+            return true
+        }
+        var patternIndex = 0
+        source.forEach { char ->
+            if (patternIndex < pattern.length && pattern[patternIndex] == char) {
+                patternIndex++
+            }
+        }
+        return patternIndex == pattern.length
+    }
+
+    private fun commitSwipeWord(word: String) {
+        val inputConnection = currentInputConnection ?: return
+        val beforeCursor = inputConnection
+            .getTextBeforeCursor(PREDICTION_CONTEXT_WINDOW, 0)
+            ?.toString()
+            .orEmpty()
+        val sentenceContext = extractPredictionSentenceContext(beforeCursor)
+        val (previousWord2, previousWord1) = extractPreviousWordsForPrediction(sentenceContext, "")
+
+        val normalizedWord = normalizeWord(word)
+        val commitWord = when {
+            manualShiftMode == ShiftMode.CAPS_LOCK -> normalizedWord.uppercase(Locale.US)
+            isShiftActive() -> normalizedWord.replaceFirstChar { it.uppercase(Locale.US) }
+            else -> normalizedWord
+        }
+
+        inputConnection.commitText(commitWord, 1)
+        inputConnection.commitText(" ", 1)
+
+        recordLearnedTransition(previousWord1, normalizedWord, boost = 2)
+        recordLearnedTrigram(previousWord2, previousWord1, normalizedWord, boost = 2)
+        learnPredictionFromContext(inputConnection)
+        pendingAutoCorrection = null
+        val consumedOneShot = consumeOneShotShiftIfNeeded(commitWord)
+        refreshAutoShiftFromContextAndRerender(consumedOneShot)
+    }
+
     private fun setIcon(button: ImageButton, drawableRes: Int, tintColorRes: Int) {
         val drawable = uiDrawable(drawableRes)?.mutate() ?: return
         drawable.setTint(uiColor(tintColorRes))
@@ -2315,6 +3370,7 @@ class NboardImeService : InputMethodService() {
         view: View,
         repeatOnHold: Boolean,
         longPressAction: ((View, Float, Float) -> Unit)?,
+        swipeToken: String? = null,
         tapOnDown: Boolean = true,
         onTap: () -> Unit
     ) {
@@ -2326,6 +3382,7 @@ class NboardImeService : InputMethodService() {
         var baseAlpha = 1f
         var repeatRunnable: Runnable? = null
         var longPressRunnable: Runnable? = null
+        var swipeActiveForThisPointer = false
 
         view.setOnTouchListener { touchedView, event ->
             if (!touchedView.isEnabled) {
@@ -2340,6 +3397,9 @@ class NboardImeService : InputMethodService() {
                     longPressStartY = event.rawY
                     longPressTriggered = false
                     baseAlpha = touchedView.alpha
+                    swipeActiveForThisPointer = swipeToken != null &&
+                        shouldHandleSwipeTyping() &&
+                        beginSwipeTyping(touchedView, swipeToken, event.rawX, event.rawY)
 
                     touchedView.isPressed = true
                     touchedView.alpha = (baseAlpha * KEY_PRESSED_ALPHA).coerceAtLeast(MIN_PRESSED_ALPHA)
@@ -2366,6 +3426,8 @@ class NboardImeService : InputMethodService() {
                         }
                         longPressRunnable = Runnable {
                             longPressTriggered = true
+                            swipeActiveForThisPointer = false
+                            cancelSwipeTyping()
                             longPressAction.invoke(touchedView, currentRawX, currentRawY)
                         }
                         val longPressDelay = minOf(
@@ -2382,6 +3444,13 @@ class NboardImeService : InputMethodService() {
                 MotionEvent.ACTION_MOVE -> {
                     currentRawX = event.rawX
                     currentRawY = event.rawY
+                    if (swipeActiveForThisPointer) {
+                        val isSwipingNow = updateSwipeTyping(currentRawX, currentRawY)
+                        if (isSwipingNow) {
+                            longPressRunnable?.let { touchedView.removeCallbacks(it) }
+                            longPressRunnable = null
+                        }
+                    }
                     if (longPressTriggered) {
                         val dx = currentRawX - longPressStartX
                         val dy = currentRawY - longPressStartY
@@ -2412,6 +3481,17 @@ class NboardImeService : InputMethodService() {
                     repeatRunnable = null
                     longPressRunnable?.let { touchedView.removeCallbacks(it) }
                     longPressRunnable = null
+
+                    if (swipeActiveForThisPointer && !longPressTriggered) {
+                        val wasSwiping = activeSwipeTypingSession?.isSwiping == true
+                        swipeActiveForThisPointer = false
+                        if (finishSwipeTypingAndCommit()) {
+                            return@setOnTouchListener true
+                        }
+                        if (wasSwiping) {
+                            return@setOnTouchListener true
+                        }
+                    }
 
                     if (longPressTriggered) {
                         if (activeVariantSession != null) {
@@ -2444,6 +3524,10 @@ class NboardImeService : InputMethodService() {
                     repeatRunnable = null
                     longPressRunnable?.let { touchedView.removeCallbacks(it) }
                     longPressRunnable = null
+                    if (swipeActiveForThisPointer) {
+                        swipeActiveForThisPointer = false
+                        cancelSwipeTyping()
+                    }
                     if (longPressTriggered) {
                         if (activeVariantSession != null) {
                             commitSelectedVariant()
@@ -2495,12 +3579,13 @@ class NboardImeService : InputMethodService() {
         iconRotation: Float = 0f,
         repeatOnHold: Boolean = false,
         longPressAction: ((View, Float, Float) -> Unit)? = null,
+        swipeToken: String? = null,
         tapOnDown: Boolean = true,
         keyHeightDp: Int = 52,
         useSerifTypeface: Boolean = false,
         isLast: Boolean,
         onTap: () -> Unit
-    ) {
+    ): View {
         val keyView: View = if (iconRes != null) {
             AppCompatImageButton(this).apply {
                 background = uiDrawable(backgroundRes)
@@ -2531,6 +3616,7 @@ class NboardImeService : InputMethodService() {
             view = keyView,
             repeatOnHold = repeatOnHold,
             longPressAction = longPressAction,
+            swipeToken = swipeToken,
             tapOnDown = tapOnDown,
             onTap = onTap
         )
@@ -2541,6 +3627,7 @@ class NboardImeService : InputMethodService() {
         }
         keyView.layoutParams = params
         row.addView(keyView)
+        return keyView
     }
 
     private fun flattenView(view: View) {
@@ -2667,7 +3754,38 @@ class NboardImeService : InputMethodService() {
         } else {
             null
         }
+        if (text.length == 1 && AUTOCORRECT_TRIGGER_DELIMITERS.contains(text[0])) {
+            learnPredictionFromContext(inputConnection)
+        }
         val consumedOneShot = consumeOneShotShiftIfNeeded(text)
+        refreshAutoShiftFromContextAndRerender(consumedOneShot)
+    }
+
+    private fun commitWordPrediction(predictedWord: String) {
+        val word = predictedWord.trim()
+        if (word.isBlank() || isAiMode || isClipboardOpen || isEmojiMode) {
+            return
+        }
+
+        val inputConnection = currentInputConnection ?: return
+        val beforeCursor = inputConnection
+            .getTextBeforeCursor(PREDICTION_CONTEXT_WINDOW, 0)
+            ?.toString()
+            .orEmpty()
+        val fragment = extractCurrentWordFragment(beforeCursor)
+        if (fragment.isNotBlank()) {
+            inputConnection.deleteSurroundingText(fragment.length, 0)
+        }
+        val sentenceContext = extractPredictionSentenceContext(beforeCursor)
+        val (previousWord2, previousWord1) = extractPreviousWordsForPrediction(sentenceContext, fragment)
+        inputConnection.commitText(word, 1)
+        inputConnection.commitText(" ", 1)
+        val normalizedWord = normalizeWord(word)
+        recordLearnedTransition(previousWord1, normalizedWord, boost = 3)
+        recordLearnedTrigram(previousWord2, previousWord1, normalizedWord, boost = 3)
+        learnPredictionFromContext(inputConnection)
+        pendingAutoCorrection = null
+        val consumedOneShot = consumeOneShotShiftIfNeeded(word)
         refreshAutoShiftFromContextAndRerender(consumedOneShot)
     }
 
@@ -2733,6 +3851,7 @@ class NboardImeService : InputMethodService() {
         val normalizedWords = LinkedHashSet<String>(words.size)
         val foldedWords = HashSet<String>(words.size)
         val byFirst = HashMap<Char, MutableList<String>>()
+        val byPrefix2 = HashMap<String, MutableList<String>>()
         val foldedToWord = HashMap<String, String>()
 
         words.forEach { raw ->
@@ -2748,6 +3867,9 @@ class NboardImeService : InputMethodService() {
             }
             foldedWords.add(folded)
             byFirst.getOrPut(folded.first()) { mutableListOf() }.add(word)
+            if (folded.length >= 2) {
+                byPrefix2.getOrPut(folded.take(2)) { mutableListOf() }.add(word)
+            }
 
             val existing = foldedToWord[folded]
             if (existing == null || word.length < existing.length) {
@@ -2758,11 +3880,15 @@ class NboardImeService : InputMethodService() {
         val indexed = byFirst.mapValues { (_, list) ->
             list.distinct().sortedWith(compareBy<String> { it.length }.thenBy { it })
         }
+        val indexedByPrefix2 = byPrefix2.mapValues { (_, list) ->
+            list.distinct().sortedWith(compareBy<String> { it.length }.thenBy { it })
+        }
 
         return Lexicon(
             words = normalizedWords,
             foldedWords = foldedWords,
             byFirst = indexed,
+            byPrefix2 = indexedByPrefix2,
             foldedToWord = foldedToWord
         )
     }
@@ -3411,6 +4537,261 @@ class NboardImeService : InputMethodService() {
             .apply()
     }
 
+    private fun loadPredictionLearning() {
+        val prefs = getSharedPreferences(KeyboardModeSettings.PREFS_NAME, MODE_PRIVATE)
+        learnedWordFrequency.clear()
+        learnedBigramFrequency.clear()
+        learnedTrigramFrequency.clear()
+
+        val wordsRaw = prefs.getString(KEY_LEARNED_WORD_COUNTS_JSON, null)
+        if (!wordsRaw.isNullOrBlank()) {
+            try {
+                val json = JSONObject(wordsRaw)
+                json.keys().forEach { key ->
+                    val count = json.optInt(key, 0)
+                    val normalized = normalizeWord(key)
+                    if (count > 0 && normalized.length >= 2) {
+                        learnedWordFrequency[normalized] = count
+                    }
+                }
+            } catch (_: Exception) {
+                learnedWordFrequency.clear()
+            }
+        }
+
+        val bigramsRaw = prefs.getString(KEY_LEARNED_BIGRAM_COUNTS_JSON, null)
+        if (!bigramsRaw.isNullOrBlank()) {
+            try {
+                val json = JSONObject(bigramsRaw)
+                json.keys().forEach { key ->
+                    val count = json.optInt(key, 0)
+                    if (count <= 0 || !key.contains('|')) {
+                        return@forEach
+                    }
+                    val previous = key.substringBefore('|')
+                    val current = key.substringAfter('|')
+                    val normalizedPrevious = normalizeWord(previous)
+                    val normalizedCurrent = normalizeWord(current)
+                    if (normalizedPrevious.length >= 1 && normalizedCurrent.length >= 2) {
+                        learnedBigramFrequency[predictionBigramKey(normalizedPrevious, normalizedCurrent)] = count
+                    }
+                }
+            } catch (_: Exception) {
+                learnedBigramFrequency.clear()
+            }
+        }
+
+        val trigramsRaw = prefs.getString(KEY_LEARNED_TRIGRAM_COUNTS_JSON, null)
+        if (!trigramsRaw.isNullOrBlank()) {
+            try {
+                val json = JSONObject(trigramsRaw)
+                json.keys().forEach { key ->
+                    val count = json.optInt(key, 0)
+                    if (count <= 0) {
+                        return@forEach
+                    }
+                    val parts = key.split('|')
+                    if (parts.size != 3) {
+                        return@forEach
+                    }
+                    val previous2 = normalizeWord(parts[0])
+                    val previous1 = normalizeWord(parts[1])
+                    val current = normalizeWord(parts[2])
+                    if (previous2.length >= 1 && previous1.length >= 1 && current.length >= 2) {
+                        learnedTrigramFrequency[predictionTrigramKey(previous2, previous1, current)] = count
+                    }
+                }
+            } catch (_: Exception) {
+                learnedTrigramFrequency.clear()
+            }
+        }
+        learningDirtyUpdates = 0
+        trimLearnedPredictionsIfNeeded(force = true)
+    }
+
+    private fun savePredictionLearning(force: Boolean = false) {
+        if (!force && learningDirtyUpdates <= 0) {
+            return
+        }
+        trimLearnedPredictionsIfNeeded(force = true)
+        val wordsJson = JSONObject().apply {
+            learnedWordFrequency.forEach { (word, count) ->
+                if (count > 0) {
+                    put(word, count)
+                }
+            }
+        }
+        val bigramsJson = JSONObject().apply {
+            learnedBigramFrequency.forEach { (key, count) ->
+                if (count > 0) {
+                    put(key, count)
+                }
+            }
+        }
+        val trigramsJson = JSONObject().apply {
+            learnedTrigramFrequency.forEach { (key, count) ->
+                if (count > 0) {
+                    put(key, count)
+                }
+            }
+        }
+        getSharedPreferences(KeyboardModeSettings.PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LEARNED_WORD_COUNTS_JSON, wordsJson.toString())
+            .putString(KEY_LEARNED_BIGRAM_COUNTS_JSON, bigramsJson.toString())
+            .putString(KEY_LEARNED_TRIGRAM_COUNTS_JSON, trigramsJson.toString())
+            .apply()
+        learningDirtyUpdates = 0
+    }
+
+    private fun learnPredictionFromContext(inputConnection: InputConnection) {
+        val beforeCursor = inputConnection
+            .getTextBeforeCursor(LEARNING_CONTEXT_WINDOW, 0)
+            ?.toString()
+            .orEmpty()
+        val tokens = extractNormalizedWordTokens(beforeCursor)
+        if (tokens.isEmpty()) {
+            return
+        }
+        val current = tokens.last()
+        if (current.length < 2) {
+            return
+        }
+
+        incrementLearnedWord(current, 1)
+        if (tokens.size >= 2) {
+            val previous = tokens[tokens.lastIndex - 1]
+            recordLearnedTransition(previous, current, boost = 1)
+        }
+        if (tokens.size >= 3) {
+            val previous2 = tokens[tokens.lastIndex - 2]
+            val previous1 = tokens[tokens.lastIndex - 1]
+            recordLearnedTrigram(previous2, previous1, current, boost = 1)
+        }
+        persistPredictionLearningIfNeeded()
+    }
+
+    private fun recordLearnedTransition(previous: String?, current: String, boost: Int) {
+        val normalizedCurrent = normalizeWord(current)
+        if (normalizedCurrent.length < 2) {
+            return
+        }
+        incrementLearnedWord(normalizedCurrent, boost)
+        val normalizedPrevious = previous?.let(::normalizeWord)
+        if (!normalizedPrevious.isNullOrBlank() && normalizedPrevious.length >= 1) {
+            val key = predictionBigramKey(normalizedPrevious, normalizedCurrent)
+            val next = (learnedBigramFrequency[key] ?: 0) + boost
+            learnedBigramFrequency[key] = next.coerceAtMost(MAX_LEARNING_COUNT)
+            learningDirtyUpdates++
+        }
+        persistPredictionLearningIfNeeded()
+    }
+
+    private fun recordLearnedTrigram(previous2: String?, previous1: String?, current: String, boost: Int) {
+        val normalizedCurrent = normalizeWord(current)
+        if (normalizedCurrent.length < 2) {
+            return
+        }
+        val normalizedPrevious2 = previous2?.let(::normalizeWord)
+        val normalizedPrevious1 = previous1?.let(::normalizeWord)
+        if (normalizedPrevious2.isNullOrBlank() || normalizedPrevious1.isNullOrBlank()) {
+            return
+        }
+        if (normalizedPrevious2.length < 1 || normalizedPrevious1.length < 1) {
+            return
+        }
+
+        val key = predictionTrigramKey(normalizedPrevious2, normalizedPrevious1, normalizedCurrent)
+        val next = (learnedTrigramFrequency[key] ?: 0) + boost
+        learnedTrigramFrequency[key] = next.coerceAtMost(MAX_LEARNING_COUNT)
+        learningDirtyUpdates++
+        persistPredictionLearningIfNeeded()
+    }
+
+    private fun incrementLearnedWord(word: String, delta: Int) {
+        val normalized = normalizeWord(word)
+        if (normalized.length < 2) {
+            return
+        }
+        val next = (learnedWordFrequency[normalized] ?: 0) + delta
+        learnedWordFrequency[normalized] = next.coerceAtMost(MAX_LEARNING_COUNT)
+        learningDirtyUpdates++
+    }
+
+    private fun persistPredictionLearningIfNeeded() {
+        trimLearnedPredictionsIfNeeded(force = false)
+        if (learningDirtyUpdates >= LEARNING_SAVE_BATCH_SIZE) {
+            savePredictionLearning(force = false)
+        }
+    }
+
+    private fun trimLearnedPredictionsIfNeeded(force: Boolean) {
+        if (force || learnedWordFrequency.size > MAX_LEARNED_WORDS + LEARNED_TRIM_MARGIN) {
+            val topWords = learnedWordFrequency.entries
+                .sortedByDescending { it.value }
+                .take(MAX_LEARNED_WORDS)
+                .associate { it.key to it.value }
+            learnedWordFrequency.clear()
+            learnedWordFrequency.putAll(topWords)
+        }
+        if (force || learnedBigramFrequency.size > MAX_LEARNED_BIGRAMS + LEARNED_TRIM_MARGIN) {
+            val topBigrams = learnedBigramFrequency.entries
+                .sortedByDescending { it.value }
+                .take(MAX_LEARNED_BIGRAMS)
+                .associate { it.key to it.value }
+            learnedBigramFrequency.clear()
+            learnedBigramFrequency.putAll(topBigrams)
+        }
+        if (force || learnedTrigramFrequency.size > MAX_LEARNED_TRIGRAMS + LEARNED_TRIM_MARGIN) {
+            val topTrigrams = learnedTrigramFrequency.entries
+                .sortedByDescending { it.value }
+                .take(MAX_LEARNED_TRIGRAMS)
+                .associate { it.key to it.value }
+            learnedTrigramFrequency.clear()
+            learnedTrigramFrequency.putAll(topTrigrams)
+        }
+    }
+
+    private fun extractNormalizedWordTokens(value: String): List<String> {
+        if (value.isBlank()) {
+            return emptyList()
+        }
+        val tokens = WORD_TOKEN_REGEX
+            .findAll(value)
+            .map { normalizeWord(it.value).trim('\'', '’') }
+            .filter { it.length in 1..24 }
+            .toList()
+        return if (tokens.size <= LEARNING_TOKEN_WINDOW) {
+            tokens
+        } else {
+            tokens.takeLast(LEARNING_TOKEN_WINDOW)
+        }
+    }
+
+    private fun extractPredictionTokens(value: String): List<String> {
+        if (value.isBlank()) {
+            return emptyList()
+        }
+        val tokens = WORD_TOKEN_REGEX
+            .findAll(value)
+            .map { normalizeWord(it.value).trim('\'', '’') }
+            .filter { it.length in 1..24 }
+            .toList()
+        return if (tokens.size <= PREDICTION_TOKEN_WINDOW) {
+            tokens
+        } else {
+            tokens.takeLast(PREDICTION_TOKEN_WINDOW)
+        }
+    }
+
+    private fun predictionBigramKey(previous: String, current: String): String {
+        return "${normalizeWord(previous)}|${normalizeWord(current)}"
+    }
+
+    private fun predictionTrigramKey(previous2: String, previous1: String, current: String): String {
+        return "${normalizeWord(previous2)}|${normalizeWord(previous1)}|${normalizeWord(current)}"
+    }
+
     private fun commonPrefixLength(source: String, target: String): Int {
         val max = minOf(source.length, target.length)
         var index = 0
@@ -3432,6 +4813,21 @@ class NboardImeService : InputMethodService() {
             return null
         }
 
+        var start = end
+        while (start >= 0 && isWordChar(value[start])) {
+            start--
+        }
+        return value.substring(start + 1, end + 1)
+    }
+
+    private fun extractCurrentWordFragment(value: String): String {
+        if (value.isBlank()) {
+            return ""
+        }
+        val end = value.length - 1
+        if (!isWordChar(value[end])) {
+            return ""
+        }
         var start = end
         while (start >= 0 && isWordChar(value[start])) {
             start--
@@ -3932,7 +5328,35 @@ class NboardImeService : InputMethodService() {
         private const val SHIFT_DOUBLE_TAP_TIMEOUT_MS = 320L
         private const val AUTO_SHIFT_CONTEXT_WINDOW = 80
         private const val AUTOCORRECT_CONTEXT_WINDOW = 40
+        private const val PREDICTION_CONTEXT_WINDOW = 280
+        private const val MAX_WORD_PREDICTIONS = 3
+        private const val MAX_PREDICTION_CANDIDATES = 3
+        private const val WORD_PREDICTION_SCAN_LIMIT = 2200
+        private const val REMOTE_PREDICTION_DEBOUNCE_MS = 120L
+        private const val REMOTE_PREDICTION_CONNECT_TIMEOUT_MS = 900L
+        private const val REMOTE_PREDICTION_READ_TIMEOUT_MS = 1200L
+        private const val REMOTE_PREDICTION_WRITE_TIMEOUT_MS = 900L
+        private const val REMOTE_PREDICTION_CALL_TIMEOUT_MS = 1600L
+        private const val REMOTE_PREDICTION_CACHE_SIZE = 200
+        private const val REMOTE_PREDICTION_TOKEN_WINDOW = 10
+        private const val MAX_PREDICTION_UNIGRAM_BOOST = 140
+        private const val MAX_PREDICTION_BIGRAM_BOOST = 220
+        private const val MAX_PREDICTION_TRIGRAM_BOOST = 260
+        private const val MAX_PREDICTION_BIGRAM_CANDIDATES = 80
+        private const val MAX_PREDICTION_TRIGRAM_CANDIDATES = 42
+        private const val MAX_PREDICTION_CONTEXT_CHAIN_CANDIDATES = 18
+        private const val MAX_PREDICTION_LEARNED_CANDIDATES = 100
+        private const val PREDICTION_CONTEXT_CHAIN_WINDOW = 6
+        private const val PREDICTION_TOKEN_WINDOW = 24
         private const val CONTEXT_LANGUAGE_WORD_WINDOW = 6
+        private const val LEARNING_CONTEXT_WINDOW = 240
+        private const val LEARNING_TOKEN_WINDOW = 14
+        private const val LEARNING_SAVE_BATCH_SIZE = 8
+        private const val MAX_LEARNED_WORDS = 2600
+        private const val MAX_LEARNED_BIGRAMS = 5200
+        private const val MAX_LEARNED_TRIGRAMS = 6800
+        private const val LEARNED_TRIM_MARGIN = 180
+        private const val MAX_LEARNING_COUNT = 50_000
         private const val MAX_EMOJI_SEARCH_SUGGESTIONS = 5
         private const val RECENT_CLIPBOARD_WINDOW_MS = 45_000L
         private const val RECENT_CLIPBOARD_PREVIEW_CHAR_LIMIT = 30
@@ -3941,6 +5365,13 @@ class NboardImeService : InputMethodService() {
         private const val EMOJI_GRID_CHUNK_SIZE = 90
         private const val SPACEBAR_CURSOR_STEP_DP = 14
         private const val SPACEBAR_CURSOR_DEADZONE_DP = 18
+        private const val SWIPE_TYPING_DEADZONE_DP = 18
+        private const val SWIPE_DWELL_COMMIT_MS = 85L
+        private const val SWIPE_LEXICON_SCAN_LIMIT = 3400
+        private const val SWIPE_LEARNED_SCAN_LIMIT = 420
+        private const val SWIPE_DISTANCE_BASE_LIMIT = 4
+        private const val SWIPE_CONFIDENT_SCORE = 34
+        private const val SWIPE_MIN_SCORE_MARGIN = 8
         private const val AUTOCORRECT_REVERT_DISABLE_THRESHOLD = 2
         private const val MAX_AUTOCORRECT_VARIANTS = 14
 
@@ -3952,6 +5383,11 @@ class NboardImeService : InputMethodService() {
         private const val KEY_EMOJI_COUNTS_JSON = "emoji_usage_counts"
         private const val KEY_EMOJI_RECENTS_JSON = "emoji_recents"
         private const val KEY_AUTOCORRECT_REJECTED_JSON = "autocorrect_rejected"
+        private const val KEY_LEARNED_WORD_COUNTS_JSON = "learned_word_counts"
+        private const val KEY_LEARNED_BIGRAM_COUNTS_JSON = "learned_bigram_counts"
+        private const val KEY_LEARNED_TRIGRAM_COUNTS_JSON = "learned_trigram_counts"
+        private const val HF_QOOGLE_MODEL_ENDPOINT =
+            "https://api-inference.huggingface.co/models/allenai/t5-small-next-word-generator-qoogle"
 
         private const val AI_PROMPT_SYSTEM_INSTRUCTION =
             "You are a concise writing assistant. Reply only with the final text. Keep responses short and practical."
@@ -3998,6 +5434,9 @@ class NboardImeService : InputMethodService() {
         private val VOWELS_FOR_REPEAT = setOf('a', 'e', 'i', 'o', 'u', 'y')
         private val DIACRITIC_REGEX = Regex("\\p{M}+")
         private val ASSET_WORD_REGEX = Regex("[a-zàâäéèêëîïôöùûüçœæÿ'\\-]{2,24}")
+        private val WORD_TOKEN_REGEX = Regex("[\\p{L}][\\p{L}'’\\-]*")
+        private val WHITESPACE_REGEX = Regex("\\s+")
+        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private val ENGLISH_WORDS = setOf(
             "a","about","after","again","all","also","always","am","an","and","any","are","around","as","at",
@@ -4024,6 +5463,63 @@ class NboardImeService : InputMethodService() {
             "sans","se","ses","si","son","sont","sur","ta","te","tes","text","texte","tes","toi","ton","toujours",
             "tout","tous","tres","très","tu","un","une","votre","vous","vu","y","salut",
             "fleur","fleurs","fleurir","jolie","magnifique","maison","chat","chien","amour","merci"
+        )
+
+        private val FRENCH_DEFAULT_PREDICTIONS = listOf(
+            "je", "vous", "nous", "le", "la", "de", "et", "pour", "avec", "dans"
+        )
+        private val ENGLISH_DEFAULT_PREDICTIONS = listOf(
+            "i", "you", "we", "the", "to", "and", "for", "with", "in", "on"
+        )
+        private val MIXED_DEFAULT_PREDICTIONS = listOf(
+            "je", "i", "vous", "you", "le", "the", "de", "to", "et", "and"
+        )
+
+        private val FRENCH_CONTEXT_HINTS = mapOf(
+            "*" to listOf("je", "vous", "le", "la", "de", "et", "pour"),
+            "je" to listOf("suis", "vais", "peux", "veux", "ne"),
+            "tu" to listOf("es", "vas", "peux", "veux", "as"),
+            "il" to listOf("est", "a", "va", "peut", "fait"),
+            "elle" to listOf("est", "a", "va", "peut", "fait"),
+            "nous" to listOf("sommes", "avons", "allons", "pouvons", "voulons"),
+            "vous" to listOf("etes", "avez", "allez", "pouvez", "voulez"),
+            "ils" to listOf("sont", "ont", "vont", "peuvent", "font"),
+            "elles" to listOf("sont", "ont", "vont", "peuvent", "font"),
+            "c'est" to listOf("important", "possible", "vrai", "bien", "la"),
+            "de" to listOf("la", "le", "l'", "mon", "ton", "notre"),
+            "des" to listOf("gens", "choses", "mots", "fleurs", "idées"),
+            "un" to listOf("peu", "jour", "mot", "chat", "chien"),
+            "une" to listOf("fois", "phrase", "idee", "maison", "fleur"),
+            "le" to listOf("temps", "texte", "chat", "monde", "moment"),
+            "la" to listOf("vie", "maison", "phrase", "fleur", "question"),
+            "les" to listOf("gens", "mots", "choses", "jours", "fleurs"),
+            "dans" to listOf("le", "la", "les", "un", "une"),
+            "pour" to listOf("le", "la", "vous", "nous", "faire"),
+            "je suis" to listOf("en", "a", "avec", "d'accord", "pret"),
+            "il est" to listOf("important", "possible", "temps", "la", "vraiment"),
+            "nous sommes" to listOf("en", "la", "pret", "ici", "ensemble"),
+            "vous etes" to listOf("en", "la", "pret", "ici", "sur")
+        )
+
+        private val ENGLISH_CONTEXT_HINTS = mapOf(
+            "*" to listOf("i", "you", "the", "to", "and", "for", "with"),
+            "i" to listOf("am", "have", "will", "can", "need"),
+            "you" to listOf("are", "have", "can", "will", "should"),
+            "he" to listOf("is", "has", "will", "can", "was"),
+            "she" to listOf("is", "has", "will", "can", "was"),
+            "we" to listOf("are", "have", "can", "will", "need"),
+            "they" to listOf("are", "have", "can", "will", "were"),
+            "the" to listOf("best", "same", "text", "time", "way"),
+            "to" to listOf("the", "be", "do", "go", "make"),
+            "for" to listOf("the", "you", "me", "this", "that"),
+            "in" to listOf("the", "a", "this", "my", "your"),
+            "on" to listOf("the", "my", "your", "this", "that"),
+            "a" to listOf("new", "good", "little", "great", "small"),
+            "an" to listOf("idea", "example", "email", "issue", "answer"),
+            "i am" to listOf("going", "not", "ready", "here", "sure"),
+            "i have" to listOf("to", "a", "been", "no", "the"),
+            "you are" to listOf("the", "not", "going", "right", "welcome"),
+            "we are" to listOf("going", "not", "ready", "here", "the")
         )
 
         private val FRENCH_TYPOS = mapOf(
@@ -4128,6 +5624,7 @@ private data class Lexicon(
     val words: Set<String>,
     val foldedWords: Set<String>,
     val byFirst: Map<Char, List<String>>,
+    val byPrefix2: Map<String, List<String>>,
     val foldedToWord: Map<String, String>
 ) {
     companion object {
@@ -4135,6 +5632,7 @@ private data class Lexicon(
             words = emptySet(),
             foldedWords = emptySet(),
             byFirst = emptyMap(),
+            byPrefix2 = emptyMap(),
             foldedToWord = emptyMap()
         )
     }
@@ -4153,6 +5651,16 @@ private data class SwipePopupSession(
     val optionActions: List<(() -> Unit)?>,
     val optionEnabled: List<Boolean>,
     var selectedIndex: Int
+)
+
+private data class SwipeTypingSession(
+    val ownerView: View,
+    val rawStartX: Float,
+    val rawStartY: Float,
+    val tokens: MutableList<String>,
+    val dwellDurationsMs: MutableList<Long>,
+    var lastTokenEnteredAtMs: Long,
+    var isSwiping: Boolean
 )
 
 private data class AutoCorrectionVariant(

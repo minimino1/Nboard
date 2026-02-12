@@ -18,6 +18,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var languageValue: TextView
     private lateinit var keyboardValue: TextView
+    private lateinit var wordPredictionValue: TextView
+    private lateinit var swipeTypingValue: TextView
     private lateinit var leftKeyModesValue: TextView
     private lateinit var rightKeyModesValue: TextView
     private lateinit var themeValue: TextView
@@ -31,6 +33,8 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         languageValue = findViewById(R.id.languageValue)
         keyboardValue = findViewById(R.id.keyboardValue)
+        wordPredictionValue = findViewById(R.id.wordPredictionValue)
+        swipeTypingValue = findViewById(R.id.swipeTypingValue)
         leftKeyModesValue = findViewById(R.id.leftKeyModesValue)
         rightKeyModesValue = findViewById(R.id.rightKeyModesValue)
         themeValue = findViewById(R.id.themeValue)
@@ -39,6 +43,7 @@ class MainActivity : AppCompatActivity() {
         applyStatusBarInset()
         bindActions()
         refreshValues()
+        maybeShowFirstLaunchOnboarding()
     }
 
     override fun onResume() {
@@ -62,6 +67,12 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         }
 
+        findViewById<View>(R.id.replayOnboardingRow).setOnClickListener {
+            startActivity(Intent(this, OnboardingActivity::class.java).apply {
+                putExtra(OnboardingActivity.EXTRA_REPLAY, true)
+            })
+        }
+
         findViewById<View>(R.id.keyboardRow).setOnClickListener {
             showKeyboardLayoutDialog()
         }
@@ -72,6 +83,14 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.apiKeyRow).setOnClickListener {
             showApiKeyDialog()
+        }
+
+        findViewById<View>(R.id.wordPredictionRow).setOnClickListener {
+            showWordPredictionDialog()
+        }
+
+        findViewById<View>(R.id.swipeTypingRow).setOnClickListener {
+            showSwipeTypingDialog()
         }
 
         findViewById<View>(R.id.leftKeyModesRow).setOnClickListener {
@@ -218,6 +237,38 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showWordPredictionDialog() {
+        val enabled = KeyboardModeSettings.loadWordPredictionEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Word prediction")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveWordPredictionEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSwipeTypingDialog() {
+        val enabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Swipe typing")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveSwipeTypingEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showFontDialog() {
         val current = KeyboardModeSettings.loadFontMode(this)
         val options = arrayOf("Inter", "Roboto")
@@ -245,6 +296,16 @@ class MainActivity : AppCompatActivity() {
         keyboardValue.text = when (KeyboardModeSettings.loadLayoutMode(this)) {
             KeyboardLayoutMode.AZERTY -> "AZERTY"
             KeyboardLayoutMode.QWERTY -> "QWERTY"
+        }
+        wordPredictionValue.text = if (KeyboardModeSettings.loadWordPredictionEnabled(this)) {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+        swipeTypingValue.text = if (KeyboardModeSettings.loadSwipeTypingEnabled(this)) {
+            "Enabled"
+        } else {
+            "Disabled"
         }
         val (leftOptions, rightOptions) = KeyboardModeSettings.loadBottomSlotOptions(this)
         leftKeyModesValue.text = formatBottomModePairLabel(leftOptions[0], leftOptions[1])
@@ -315,6 +376,12 @@ class MainActivity : AppCompatActivity() {
     private fun openLink(url: String) {
         runCatching {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }
+    }
+
+    private fun maybeShowFirstLaunchOnboarding() {
+        if (!KeyboardModeSettings.loadOnboardingCompleted(this)) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
         }
     }
 }

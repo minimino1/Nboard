@@ -43,6 +43,9 @@ object KeyboardModeSettings {
     private const val KEY_API_KEY = "gemini_api_key"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_FONT_MODE = "font_mode"
+    private const val KEY_WORD_PREDICTION_ENABLED = "word_prediction_enabled"
+    private const val KEY_SWIPE_TYPING_ENABLED = "swipe_typing_enabled"
+    private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     fun load(context: Context): Pair<BottomKeyMode, BottomKeyMode> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -189,6 +192,42 @@ object KeyboardModeSettings {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_FONT_MODE, mode.value)
+            .apply()
+    }
+
+    fun loadWordPredictionEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WORD_PREDICTION_ENABLED, true)
+    }
+
+    fun saveWordPredictionEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_WORD_PREDICTION_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadSwipeTypingEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SWIPE_TYPING_ENABLED, true)
+    }
+
+    fun saveSwipeTypingEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SWIPE_TYPING_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadOnboardingCompleted(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_ONBOARDING_COMPLETED, false)
+    }
+
+    fun saveOnboardingCompleted(context: Context, completed: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ONBOARDING_COMPLETED, completed)
             .apply()
     }
 
