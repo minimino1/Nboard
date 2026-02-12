@@ -185,11 +185,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showThemeDialog() {
         val current = KeyboardModeSettings.loadThemeMode(this)
-        val options = arrayOf("System", "Light", "Dark")
+        val options = arrayOf("System", "Light", "Dark", "Dark (Classic)")
         val selected = when (current) {
             AppThemeMode.SYSTEM -> 0
             AppThemeMode.LIGHT -> 1
             AppThemeMode.DARK -> 2
+            AppThemeMode.DARK_CLASSIC -> 3
         }
 
         AlertDialog.Builder(this)
@@ -198,6 +199,7 @@ class MainActivity : AppCompatActivity() {
                 val mode = when (which) {
                     1 -> AppThemeMode.LIGHT
                     2 -> AppThemeMode.DARK
+                    3 -> AppThemeMode.DARK_CLASSIC
                     else -> AppThemeMode.SYSTEM
                 }
                 KeyboardModeSettings.saveThemeMode(this, mode)
@@ -314,6 +316,7 @@ class MainActivity : AppCompatActivity() {
             AppThemeMode.SYSTEM -> "System"
             AppThemeMode.LIGHT -> "Light"
             AppThemeMode.DARK -> "Dark"
+            AppThemeMode.DARK_CLASSIC -> "Dark (Classic)"
         }
         fontValue.text = when (KeyboardModeSettings.loadFontMode(this)) {
             KeyboardFontMode.INTER -> "Inter"
@@ -366,7 +369,8 @@ class MainActivity : AppCompatActivity() {
         val nightMode = when (mode) {
             AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             AppThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
-            AppThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            AppThemeMode.DARK,
+            AppThemeMode.DARK_CLASSIC -> AppCompatDelegate.MODE_NIGHT_YES
         }
         if (AppCompatDelegate.getDefaultNightMode() != nightMode) {
             AppCompatDelegate.setDefaultNightMode(nightMode)

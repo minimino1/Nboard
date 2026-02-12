@@ -461,7 +461,8 @@ class OnboardingActivity : AppCompatActivity() {
         val nightMode = when (mode) {
             AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             AppThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
-            AppThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            AppThemeMode.DARK,
+            AppThemeMode.DARK_CLASSIC -> AppCompatDelegate.MODE_NIGHT_YES
         }
         if (AppCompatDelegate.getDefaultNightMode() != nightMode) {
             AppCompatDelegate.setDefaultNightMode(nightMode)

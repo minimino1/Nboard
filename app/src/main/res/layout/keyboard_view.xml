@@ -113,7 +113,7 @@
                 android:minHeight="40dp"
                 android:paddingStart="4dp"
                 android:paddingEnd="4dp"
-                android:textColor="@color/key_text"
+                android:textColor="@color/ai_text"
                 android:textColorHint="@color/ai_hint"
                 android:textSize="14sp" />
         </LinearLayout>
@@ -186,7 +186,7 @@
                 android:inputType="text"
                 android:paddingStart="0dp"
                 android:paddingEnd="0dp"
-                android:textColor="@color/key_text"
+                android:textColor="@color/ai_text"
                 android:textColorHint="@color/ai_hint"
                 android:textSize="14sp" />
         </LinearLayout>

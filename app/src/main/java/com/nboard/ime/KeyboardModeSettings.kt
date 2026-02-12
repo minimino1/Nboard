@@ -22,7 +22,8 @@ enum class KeyboardLanguageMode(val value: String) {
 enum class AppThemeMode(val value: String) {
     SYSTEM("system"),
     LIGHT("light"),
-    DARK("dark")
+    DARK("dark"),
+    DARK_CLASSIC("dark_classic")
 }
 
 enum class KeyboardFontMode(val value: String) {
@@ -166,6 +167,7 @@ object KeyboardModeSettings {
                 .getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.value)
         ) {
             AppThemeMode.LIGHT.value -> AppThemeMode.LIGHT
+            AppThemeMode.DARK_CLASSIC.value -> AppThemeMode.DARK_CLASSIC
             AppThemeMode.DARK.value -> AppThemeMode.DARK
             else -> AppThemeMode.SYSTEM
         }

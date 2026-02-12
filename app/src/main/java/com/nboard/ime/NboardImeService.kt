@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
@@ -152,6 +153,7 @@ class NboardImeService : InputMethodService() {
     private var keyboardLayoutMode = KeyboardLayoutMode.AZERTY
     private var keyboardLanguageMode = KeyboardLanguageMode.FRENCH
     private var keyboardFontMode = KeyboardFontMode.INTER
+    private var appThemeMode = AppThemeMode.SYSTEM
     private var wordPredictionEnabled = true
     private var swipeTypingEnabled = true
 
@@ -330,6 +332,7 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun reloadTypingSettings() {
+        appThemeMode = KeyboardModeSettings.loadThemeMode(this)
         keyboardLayoutMode = KeyboardModeSettings.loadLayoutMode(this)
         keyboardLanguageMode = KeyboardModeSettings.loadLanguageMode(this)
         keyboardFontMode = KeyboardModeSettings.loadFontMode(this)
@@ -346,12 +349,12 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun createKeyboardUiContext(): Context {
-        val themeMode = KeyboardModeSettings.loadThemeMode(this)
+        val themeMode = appThemeMode
         if (themeMode == AppThemeMode.SYSTEM) {
             return this
         }
 
-        val targetNightMode = if (themeMode == AppThemeMode.DARK) {
+        val targetNightMode = if (themeMode == AppThemeMode.DARK || themeMode == AppThemeMode.DARK_CLASSIC) {
             Configuration.UI_MODE_NIGHT_YES
         } else {
             Configuration.UI_MODE_NIGHT_NO
@@ -516,9 +519,9 @@ class NboardImeService : InputMethodService() {
         predictionWord3Button.setTextColor(uiColor(R.color.key_text))
         predictionSeparator1.setTextColor(uiColor(R.color.key_text))
         predictionSeparator2.setTextColor(uiColor(R.color.key_text))
-        aiPromptInput.setTextColor(uiColor(R.color.key_text))
+        aiPromptInput.setTextColor(uiColor(R.color.ai_text))
         aiPromptInput.setHintTextColor(uiColor(R.color.ai_hint))
-        emojiSearchInput.setTextColor(uiColor(R.color.key_text))
+        emojiSearchInput.setTextColor(uiColor(R.color.ai_text))
         emojiSearchInput.setHintTextColor(uiColor(R.color.ai_hint))
 
         modeSwitchButton.contentDescription = "Switch layout"
@@ -831,7 +834,7 @@ class NboardImeService : InputMethodService() {
         updateBottomModeIcons()
         updateModeSelectionVisuals()
         if (isEmojiMode) {
-            setIcon(aiModeButton, R.drawable.ic_search_lucide, R.color.key_text)
+            setIcon(aiModeButton, R.drawable.ic_search_lucide, R.color.ai_text)
             setIcon(clipboardButton, R.drawable.ic_smile_lucide, R.color.key_text)
         }
 
@@ -1053,7 +1056,7 @@ class NboardImeService : InputMethodService() {
         }
 
         if (aiTextPulseAnimator == null) {
-            val baseColor = uiColor(R.color.key_text)
+            val baseColor = uiColor(R.color.ai_text)
             val pulseColor = uiColor(R.color.ai_text_shine)
             aiTextPulseAnimator = ValueAnimator.ofObject(ArgbEvaluator(), baseColor, pulseColor, baseColor).apply {
                 duration = 900L
@@ -1077,7 +1080,7 @@ class NboardImeService : InputMethodService() {
         aiTextPulseAnimator?.cancel()
         aiTextPulseAnimator = null
         if (::aiPromptInput.isInitialized) {
-            aiPromptInput.setTextColor(uiColor(R.color.key_text))
+            aiPromptInput.setTextColor(uiColor(R.color.ai_text))
         }
     }
 
@@ -1089,7 +1092,7 @@ class NboardImeService : InputMethodService() {
         aiTextPulseAnimator?.cancel()
         aiTextPulseAnimator = null
 
-        val baseColor = uiColor(R.color.key_text)
+        val baseColor = uiColor(R.color.ai_text)
         val flashColor = uiColor(R.color.ai_text_shine)
         ValueAnimator.ofObject(ArgbEvaluator(), flashColor, baseColor).apply {
             duration = 420L
@@ -1507,7 +1510,7 @@ class NboardImeService : InputMethodService() {
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundResource(R.drawable.bg_variant_popup)
+            background = uiDrawable(R.drawable.bg_variant_popup)
             setPadding(dp(8), dp(8), dp(8), dp(8))
             clipChildren = false
         }
@@ -1697,7 +1700,7 @@ class NboardImeService : InputMethodService() {
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundResource(R.drawable.bg_variant_popup)
+            background = uiDrawable(R.drawable.bg_variant_popup)
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
 
@@ -2906,11 +2909,44 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun uiColor(colorRes: Int): Int {
+        if (appThemeMode == AppThemeMode.DARK_CLASSIC) {
+            classicDarkColorOverride(colorRes)?.let { return it }
+        }
         return ContextCompat.getColor(keyboardUiContext, colorRes)
     }
 
     private fun uiDrawable(drawableRes: Int) =
-        AppCompatResources.getDrawable(keyboardUiContext, drawableRes)
+        AppCompatResources.getDrawable(keyboardUiContext, drawableRes)?.mutate()?.also { drawable ->
+            if (appThemeMode != AppThemeMode.DARK_CLASSIC) {
+                return@also
+            }
+            val tintColor = when (drawableRes) {
+                R.drawable.bg_keyboard_container -> uiColor(R.color.keyboard_bg)
+                R.drawable.bg_key,
+                R.drawable.bg_space_key,
+                R.drawable.bg_chip,
+                R.drawable.bg_prediction_side_chip,
+                R.drawable.bg_popup_option -> uiColor(R.color.key_bg)
+                R.drawable.bg_special_key,
+                R.drawable.bg_send_button -> uiColor(R.color.key_special_bg)
+                else -> null
+            }
+            tintColor?.let { drawable.setTint(it) }
+        }
+
+    private fun classicDarkColorOverride(colorRes: Int): Int? {
+        return when (colorRes) {
+            R.color.keyboard_bg -> CLASSIC_DARK_KEYBOARD_BG
+            R.color.key_bg -> CLASSIC_DARK_KEY_BG
+            R.color.key_special_bg -> CLASSIC_DARK_KEY_SPECIAL_BG
+            R.color.key_text -> CLASSIC_DARK_TEXT
+            R.color.space_text -> CLASSIC_DARK_SPACE_TEXT
+            R.color.send_bg -> CLASSIC_DARK_KEY_SPECIAL_BG
+            R.color.send_text -> CLASSIC_DARK_TEXT
+            R.color.popup_shadow -> CLASSIC_DARK_POPUP_SHADOW
+            else -> null
+        }
+    }
 
     private fun bindPressAction(view: View, onTap: () -> Unit) {
         configureKeyTouch(view, repeatOnHold = false, longPressAction = null, tapOnDown = false, onTap = onTap)
@@ -3360,7 +3396,12 @@ class NboardImeService : InputMethodService() {
 
     private fun setIcon(button: ImageButton, drawableRes: Int, tintColorRes: Int) {
         val drawable = uiDrawable(drawableRes)?.mutate() ?: return
-        drawable.setTint(uiColor(tintColorRes))
+        val resolvedTint = if (drawableRes == R.drawable.ic_ai_custom) {
+            R.color.ai_text
+        } else {
+            tintColorRes
+        }
+        drawable.setTint(uiColor(resolvedTint))
         button.setImageDrawable(drawable)
         button.scaleType = ImageView.ScaleType.CENTER_INSIDE
         button.setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -5009,7 +5050,7 @@ class NboardImeService : InputMethodService() {
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundResource(R.drawable.bg_variant_popup)
+            background = uiDrawable(R.drawable.bg_variant_popup)
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
 
@@ -5315,6 +5356,12 @@ class NboardImeService : InputMethodService() {
 
     companion object {
         private const val TAG = "NboardImeService"
+        private val CLASSIC_DARK_KEYBOARD_BG = Color.parseColor("#202327")
+        private val CLASSIC_DARK_KEY_BG = Color.parseColor("#30343A")
+        private val CLASSIC_DARK_KEY_SPECIAL_BG = Color.parseColor("#3C4148")
+        private val CLASSIC_DARK_TEXT = Color.parseColor("#F1F3F4")
+        private val CLASSIC_DARK_SPACE_TEXT = Color.parseColor("#8A9097")
+        private val CLASSIC_DARK_POPUP_SHADOW = Color.parseColor("#15191F")
 
         private const val KEY_REPEAT_START_DELAY_MS = 260L
         private const val KEY_REPEAT_INTERVAL_MS = 45L
