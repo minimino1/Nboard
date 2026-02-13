@@ -1699,6 +1699,23 @@ class NboardImeService : InputMethodService() {
             return
         }
 
+        val selectedText = currentInputConnection
+            ?.getSelectedText(0)
+            ?.toString()
+            ?.trim()
+            .orEmpty()
+        val resolvedPrompt = if (selectedText.isBlank()) {
+            prompt
+        } else {
+            buildString {
+                append("Apply this instruction to the selected text and return only the transformed result.\n")
+                append("Instruction: ")
+                append(prompt)
+                append("\n\nSelected text:\n")
+                append(selectedText)
+            }
+        }
+
         if (!geminiClient.isConfigured) {
             toast("Gemini API key missing. AI is disabled")
             return
@@ -1708,7 +1725,7 @@ class NboardImeService : InputMethodService() {
         setGenerating(true)
         serviceScope.launch {
             val result = geminiClient.generateText(
-                prompt = prompt,
+                prompt = resolvedPrompt,
                 systemInstruction = AI_PROMPT_SYSTEM_INSTRUCTION,
                 outputCharLimit = AI_REPLY_CHAR_LIMIT
             )
