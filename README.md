@@ -1,5 +1,9 @@
 # Nboard
 
+![Version](https://img.shields.io/badge/version-1.0.0-yellow)
+![Android](https://img.shields.io/badge/android-8.0%2B%20(API%2026)-grey)
+![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)
+
 <p align="center">
   <img src="docs/media/logo.png" alt="Nboard logo" width="96" height="96" />
 </p>
@@ -15,6 +19,10 @@
   ·
   <a href="#features">Features</a>
 </p>
+
+## About
+
+Built for Nothing Phone users who wanted a keyboard matching their device's minimal aesthetic — works great on any Android phone.
 
 ## Screenshots
 
@@ -42,18 +50,33 @@
 - Font options: `Inter` / `Roboto`
 - Configurable side mode keys (AI / Clipboard / Emoji)
 
+## Beta Features
+
+- Word Prediction *(experimental)*
+- Swipe Typing *(experimental)*
+
+These features are currently in beta and may have occasional issues. We're actively improving them. Feedback welcome!
+
+## Support Development
+
+If you want to support Nboard development:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/dotslimy)
+
 ## Install APK (GitHub Releases)
 
 1. Open [Releases](https://github.com/MathieuDvv/Nboard/releases).
-2. Download the latest APK from the assets section.
+2. Download the latest assets (`.apk` + source `.zip`).
 3. Install on device:
 
 ```bash
-adb install -r path/to/nboard-release.apk
+adb install -r path/to/NBoard-v1.0.0-release.apk
 ```
 
 4. On Android, enable **Nboard** in keyboard settings.
 5. Select **Nboard** as your current keyboard.
+
+Minimum Android version: **Android 8.0 (API 26)**.
 
 ## Build Locally
 
@@ -61,6 +84,7 @@ adb install -r path/to/nboard-release.apk
 
 - Android Studio or Android SDK + JDK 17
 - `adb` available in PATH
+- Android 8.0+ target device/emulator (API 26+)
 
 ### Build
 
@@ -103,6 +127,46 @@ GEMINI_API_KEY=YOUR_API_KEY_HERE
 
 You can also set/update the key directly from the app settings.
 
+## Privacy & Security
+
+- AI features require internet access and send prompt text to the Gemini API.
+- Clipboard history is stored locally on device.
+- No telemetry or usage tracking is implemented.
+- Nboard is open source, so behavior is fully auditable.
+
+## What's Next (v1.1)
+
+- Voice input
+- Password autofill (AutofillManager integration)
+- GIF search
+- Improved swipe typing accuracy
+- More AI quick actions
+- Additional language support
+
+## Contributing & Feedback
+
+- Bug reports: [GitHub Issues](https://github.com/MathieuDvv/Nboard/issues)
+- Feature requests/discussion: [GitHub Discussions](https://github.com/MathieuDvv/Nboard/discussions)
+- Feedback from real typing usage is very useful and helps prioritize improvements.
+
+## Troubleshooting
+
+- **Keyboard doesn't appear**
+  - Open Android settings.
+  - Go to keyboard/input method settings.
+  - Enable **Nboard** and set it as active keyboard.
+  - Re-open the target app input field.
+- **AI features not working**
+  - Confirm internet connection is available.
+  - Verify Gemini API key is set correctly.
+  - Check Gemini API quota/billing limits.
+- **Swipe typing not working**
+  - Swipe Typing is still beta.
+  - Make sure it is enabled in settings.
+  - Update to the latest release and retry.
+- **App crashes**
+  - Please report with steps and device info in [GitHub Issues](https://github.com/MathieuDvv/Nboard/issues).
+
 ## Notes
 
 - Behavior depends on host app editor support.
@@ -111,4 +175,6 @@ You can also set/update the key directly from the app settings.
 
 ## License
 
-AGPL-3.0 — see [`LICENSE`](LICENSE).
+Licensed under **AGPL-3.0** — see [`LICENSE`](LICENSE).
+
+Free for personal use. For commercial licensing inquiries, contact: `mathieu.davinha83@gmail.com`.
