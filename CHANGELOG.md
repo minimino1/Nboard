@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.1.0] - 2026-02-13
+
+### Added
+
+- Added hold-to-talk voice recognition with live dictation and settings toggle.
+- Added smoother, more precise swipe typing with an optional yellow trail.
+- Added AI prompt selected-text context mode: prompt instructions can now apply directly to selected input text.
+- Added voice recognition control to onboarding beta features.
+
+### Changed
+
+- Reorganized settings with a dedicated Beta Features section and conditional trail option visibility.
+- Updated project roadmap to maintenance mode with future updates marked as not planned.
+
 ## [1.0.1] - 2026-02-13
 
 ### Fixed

@@ -1,6 +1,6 @@
 # Nboard
 
-![Version](https://img.shields.io/badge/version-1.0.1-yellow)
+![Version](https://img.shields.io/badge/version-1.1.0-yellow)
 ![Android](https://img.shields.io/badge/android-8.0%2B%20(API%2026)-grey)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)
 
@@ -26,6 +26,16 @@
 
 Built for Nothing Phone users who wanted a keyboard matching their device's minimal aesthetic — works great on any Android phone.
 
+## Project Status
+
+Nboard is **feature-complete** and in maintenance mode after v1.1.0.
+
+I built this keyboard to solve my own problem: wanting a Nothing-inspired keyboard with AI tools. It works great, and I use it daily.
+
+I'll fix critical bugs, but I'm not committing to major new features. The project does what it's meant to do.
+
+If you want additional features, fork it! It's open source (AGPL-3.0) for exactly this reason.
+
 ## Screenshots
 
 | Keyboard | AI tools |
@@ -46,7 +56,7 @@ Built for Nothing Phone users who wanted a keyboard matching their device's mini
 - Haptics and press animations
 - Clipboard history with pin/delete + recent chip for text/images
 - Emoji browser + search mode
-- AI tools (Summarize, Fix Grammar, Expand, free prompt)
+- AI tools (Summarize, Fix Grammar, Expand, free prompt with selected-text context support)
 - Contextual action icon based on input field type
 - Theme options: `System`, `Light`, `Dark`, `Dark (Classic)`
 - Font options: `Inter` / `Roboto`
@@ -56,8 +66,9 @@ Built for Nothing Phone users who wanted a keyboard matching their device's mini
 
 - Word Prediction *(experimental)*
 - Swipe Typing *(experimental)*
+- Voice recognition (hold send) *(experimental)*
 
-These features are currently in beta and may have occasional issues. We're actively improving them. Feedback welcome!
+These features are currently in beta and may have occasional issues.
 
 ## Support Development
 
@@ -72,7 +83,7 @@ If you want to support Nboard development:
 3. Install on device:
 
 ```bash
-adb install -r path/to/NBoard-v1.0.1-release.apk
+adb install -r path/to/NBoard-v1.1.0-release.apk
 ```
 
 4. On Android, enable **Nboard** in keyboard settings.
@@ -136,14 +147,13 @@ You can also set/update the key directly from the app settings.
 - No telemetry or usage tracking is implemented.
 - Nboard is open source, so behavior is fully auditable.
 
-## What's Next (v1.1)
+## Future updates (Not planned yet)
 
-- Voice input
 - Password autofill (AutofillManager integration)
 - GIF search
-- Improved swipe typing accuracy
-- More AI quick actions
+- Additional AI quick actions
 - Additional language support
+- Further swipe typing improvements
 
 ## Contributing & Feedback
 
