@@ -141,11 +141,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLanguageDialog() {
         val current = KeyboardModeSettings.loadLanguageMode(this)
-        val options = arrayOf("French", "English", "French + English")
+        val options = arrayOf("French", "English", "French + English", "Disabled")
         val selected = when (current) {
             KeyboardLanguageMode.FRENCH -> 0
             KeyboardLanguageMode.ENGLISH -> 1
             KeyboardLanguageMode.BOTH -> 2
+            KeyboardLanguageMode.DISABLED -> 3
         }
 
         AlertDialog.Builder(this)
@@ -154,6 +155,7 @@ class MainActivity : AppCompatActivity() {
                 val mode = when (which) {
                     1 -> KeyboardLanguageMode.ENGLISH
                     2 -> KeyboardLanguageMode.BOTH
+                    3 -> KeyboardLanguageMode.DISABLED
                     else -> KeyboardLanguageMode.FRENCH
                 }
                 KeyboardModeSettings.saveLanguageMode(this, mode)
@@ -294,6 +296,7 @@ class MainActivity : AppCompatActivity() {
             KeyboardLanguageMode.FRENCH -> "French"
             KeyboardLanguageMode.ENGLISH -> "English"
             KeyboardLanguageMode.BOTH -> "French + English"
+            KeyboardLanguageMode.DISABLED -> "Disabled"
         }
         keyboardValue.text = when (KeyboardModeSettings.loadLayoutMode(this)) {
             KeyboardLayoutMode.AZERTY -> "AZERTY"

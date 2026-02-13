@@ -16,7 +16,8 @@ enum class KeyboardLayoutMode(val value: String) {
 enum class KeyboardLanguageMode(val value: String) {
     FRENCH("french"),
     ENGLISH("english"),
-    BOTH("both")
+    BOTH("both"),
+    DISABLED("disabled")
 }
 
 enum class AppThemeMode(val value: String) {
@@ -137,6 +138,7 @@ object KeyboardModeSettings {
         return when (raw) {
             KeyboardLanguageMode.ENGLISH.value -> KeyboardLanguageMode.ENGLISH
             KeyboardLanguageMode.BOTH.value -> KeyboardLanguageMode.BOTH
+            KeyboardLanguageMode.DISABLED.value -> KeyboardLanguageMode.DISABLED
             else -> KeyboardLanguageMode.FRENCH
         }
     }

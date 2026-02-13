@@ -1,6 +1,6 @@
 # Nboard
 
-![Version](https://img.shields.io/badge/version-1.0.0-yellow)
+![Version](https://img.shields.io/badge/version-1.0.1-yellow)
 ![Android](https://img.shields.io/badge/android-8.0%2B%20(API%2026)-grey)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)
 
@@ -40,7 +40,7 @@ Built for Nothing Phone users who wanted a keyboard matching their device's mini
 
 - AZERTY and QWERTY layouts
 - Smart shift behavior (auto-capitalize, one-shot shift, caps lock)
-- Local autocorrect (French / English / Both)
+- Local autocorrect (French / English / Both / Disabled)
 - Long-press variants for letters and punctuation
 - Spacebar cursor swipe
 - Haptics and press animations
@@ -72,7 +72,7 @@ If you want to support Nboard development:
 3. Install on device:
 
 ```bash
-adb install -r path/to/NBoard-v1.0.0-release.apk
+adb install -r path/to/NBoard-v1.0.1-release.apk
 ```
 
 4. On Android, enable **Nboard** in keyboard settings.

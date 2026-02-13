@@ -145,6 +145,7 @@ class NboardImeService : InputMethodService() {
     private var isSymbolsSubmenuOpen = false
     private var isEmojiMode = false
     private var isEmojiSearchMode = false
+    private var inlineInputTarget = InlineInputTarget.NONE
 
     private var leftBottomMode = BottomKeyMode.AI
     private var rightBottomMode = BottomKeyMode.CLIPBOARD
@@ -280,6 +281,7 @@ class NboardImeService : InputMethodService() {
         stopAiProcessingAnimations()
         pendingAutoCorrection = null
         activeSwipeTypingSession = null
+        inlineInputTarget = InlineInputTarget.NONE
         val newPackage = editorInfo?.packageName
         if (newPackage != activeEditorPackage) {
             isEmojiSearchMode = false
@@ -329,6 +331,7 @@ class NboardImeService : InputMethodService() {
         if (::aiPromptInput.isInitialized) {
             aiPromptInput.text?.clear()
         }
+        clearInlinePromptFocus()
     }
 
     private fun reloadTypingSettings() {
@@ -381,6 +384,9 @@ class NboardImeService : InputMethodService() {
             candidatesStart,
             candidatesEnd
         )
+        if (isAiPromptInputActive() || isEmojiSearchInputActive()) {
+            clearInlinePromptFocus()
+        }
         if (::row1.isInitialized) {
             refreshAutoShiftFromContextAndRerender()
         }
@@ -573,6 +579,17 @@ class NboardImeService : InputMethodService() {
                 renderEmojiSuggestions()
             }
         }
+        emojiSearchInput.setOnFocusChangeListener { _, hasFocus ->
+            when {
+                hasFocus && isEmojiSearchActive() -> inlineInputTarget = InlineInputTarget.EMOJI_SEARCH
+                !hasFocus && inlineInputTarget == InlineInputTarget.EMOJI_SEARCH -> inlineInputTarget = InlineInputTarget.NONE
+            }
+        }
+        emojiSearchInput.setOnClickListener {
+            if (isEmojiSearchActive()) {
+                inlineInputTarget = InlineInputTarget.EMOJI_SEARCH
+            }
+        }
         emojiGridScroll.setOnScrollChangeListener { _, scrollX, _, _, _ ->
             val body = emojiGridScroll.getChildAt(0) ?: return@setOnScrollChangeListener
             if (scrollX + emojiGridScroll.width >= body.width - dp(96)) {
@@ -620,6 +637,7 @@ class NboardImeService : InputMethodService() {
                 isEmojiSearchMode = false
                 isNumbersMode = false
                 isSymbolsSubmenuOpen = false
+                clearInlinePromptFocus()
                 emojiSearchInput.text?.clear()
             } else if (isNumbersMode) {
                 isNumbersMode = false
@@ -644,9 +662,9 @@ class NboardImeService : InputMethodService() {
             if (isEmojiMode) {
                 isEmojiSearchMode = !isEmojiSearchMode
                 if (isEmojiSearchMode) {
-                    emojiSearchInput.requestFocus()
-                    emojiSearchInput.setSelection(emojiSearchInput.text?.length ?: 0)
+                    inlineInputTarget = InlineInputTarget.NONE
                 } else {
+                    clearInlinePromptFocus()
                     emojiSearchInput.text?.clear()
                 }
                 renderEmojiSuggestions()
@@ -704,7 +722,7 @@ class NboardImeService : InputMethodService() {
         }
 
         bindPressAction(actionButton) {
-            if (isAiMode) {
+            if (isAiPromptInputActive()) {
                 submitAiPrompt()
             } else if (isClipboardOpen) {
                 deleteOneCharacter()
@@ -725,6 +743,17 @@ class NboardImeService : InputMethodService() {
             commitWordPrediction(predictionWord3Button.text?.toString().orEmpty())
         }
 
+        aiPromptInput.setOnFocusChangeListener { _, hasFocus ->
+            when {
+                hasFocus && isAiMode -> inlineInputTarget = InlineInputTarget.AI_PROMPT
+                !hasFocus && inlineInputTarget == InlineInputTarget.AI_PROMPT -> inlineInputTarget = InlineInputTarget.NONE
+            }
+        }
+        aiPromptInput.setOnClickListener {
+            if (isAiMode) {
+                inlineInputTarget = InlineInputTarget.AI_PROMPT
+            }
+        }
         aiPromptInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
                 submitAiPrompt()
@@ -743,7 +772,10 @@ class NboardImeService : InputMethodService() {
         isEmojiMode = false
         isClipboardOpen = false
         isAiMode = !isAiMode
-        if (!isAiMode) {
+        if (isAiMode) {
+            inlineInputTarget = InlineInputTarget.NONE
+        } else {
+            clearInlinePromptFocus()
             aiPromptInput.text?.clear()
             setGenerating(false)
         }
@@ -761,11 +793,13 @@ class NboardImeService : InputMethodService() {
             isEmojiSearchMode = false
             setGenerating(false)
             emojiSearchInput.text?.clear()
+            clearInlinePromptFocus()
             renderEmojiGrid()
             renderEmojiSuggestions()
         } else {
             isEmojiSearchMode = false
             emojiSearchInput.text?.clear()
+            clearInlinePromptFocus()
         }
         renderKeyRows()
         refreshUi()
@@ -789,6 +823,7 @@ class NboardImeService : InputMethodService() {
         isEmojiSearchMode = false
         isAiMode = false
         setGenerating(false)
+        clearInlinePromptFocus()
         isClipboardOpen = !isClipboardOpen
         renderClipboardItems()
         refreshUi()
@@ -802,6 +837,7 @@ class NboardImeService : InputMethodService() {
         if (!aiAllowed && isAiMode) {
             isAiMode = false
             aiPromptInput.text?.clear()
+            clearInlinePromptFocus()
             setGenerating(false)
         }
 
@@ -1687,10 +1723,13 @@ class NboardImeService : InputMethodService() {
     private fun commitSelectedSwipePopup() {
         val session = activeSwipePopupSession ?: return
         val index = session.selectedIndex
-        if (session.optionEnabled.getOrNull(index) == true) {
-            session.optionActions.getOrNull(index)?.invoke()
+        val action = if (session.optionEnabled.getOrNull(index) == true) {
+            session.optionActions.getOrNull(index)
+        } else {
+            null
         }
         dismissActivePopup()
+        action?.invoke()
     }
 
     private fun showBottomModePopup(anchor: View, touchRawX: Float, touchRawY: Float, isLeftSlot: Boolean) {
@@ -1842,7 +1881,9 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun onEmojiChosen(emoji: String) {
-        commitKeyText(emoji)
+        currentInputConnection?.commitText(emoji, 1)
+        pendingAutoCorrection = null
+        refreshAutoShiftFromContextAndRerender()
         recordEmojiUsage(emoji)
     }
 
@@ -2515,6 +2556,7 @@ class NboardImeService : InputMethodService() {
             KeyboardLanguageMode.ENGLISH ->
                 if (contextLanguage == KeyboardLanguageMode.FRENCH) ENGLISH_DEFAULT_PREDICTIONS.take(4) else ENGLISH_DEFAULT_PREDICTIONS
             KeyboardLanguageMode.BOTH -> MIXED_DEFAULT_PREDICTIONS
+            KeyboardLanguageMode.DISABLED -> MIXED_DEFAULT_PREDICTIONS
         }
     }
 
@@ -2630,6 +2672,7 @@ class NboardImeService : InputMethodService() {
                 KeyboardLanguageMode.ENGLISH -> listOf(KeyboardLanguageMode.ENGLISH, KeyboardLanguageMode.FRENCH)
                 else -> listOf(KeyboardLanguageMode.FRENCH, KeyboardLanguageMode.ENGLISH)
             }
+            KeyboardLanguageMode.DISABLED -> listOf(KeyboardLanguageMode.FRENCH, KeyboardLanguageMode.ENGLISH)
         }
 
         val results = LinkedHashSet<String>()
@@ -2638,6 +2681,7 @@ class NboardImeService : InputMethodService() {
                 KeyboardLanguageMode.FRENCH -> FRENCH_CONTEXT_HINTS
                 KeyboardLanguageMode.ENGLISH -> ENGLISH_CONTEXT_HINTS
                 KeyboardLanguageMode.BOTH -> emptyMap<String, List<String>>()
+                KeyboardLanguageMode.DISABLED -> emptyMap<String, List<String>>()
             }
             keys.forEach { key ->
                 source[key]?.forEach { results.add(it) }
@@ -2756,6 +2800,7 @@ class NboardImeService : InputMethodService() {
                 KeyboardLanguageMode.ENGLISH -> ENGLISH_DEFAULT_PREDICTIONS + FRENCH_DEFAULT_PREDICTIONS
                 else -> MIXED_DEFAULT_PREDICTIONS
             }
+            KeyboardLanguageMode.DISABLED -> MIXED_DEFAULT_PREDICTIONS
         }
     }
 
@@ -2815,6 +2860,28 @@ class NboardImeService : InputMethodService() {
 
     private fun isEmojiSearchActive(): Boolean {
         return isEmojiMode && isEmojiSearchMode
+    }
+
+    private fun isAiPromptInputActive(): Boolean {
+        return isAiMode && inlineInputTarget == InlineInputTarget.AI_PROMPT
+    }
+
+    private fun isEmojiSearchInputActive(): Boolean {
+        return isEmojiSearchActive() && inlineInputTarget == InlineInputTarget.EMOJI_SEARCH
+    }
+
+    private fun clearInlinePromptFocus() {
+        inlineInputTarget = InlineInputTarget.NONE
+        if (::aiPromptInput.isInitialized) {
+            aiPromptInput.clearFocus()
+        }
+        if (::emojiSearchInput.isInitialized) {
+            emojiSearchInput.clearFocus()
+        }
+        if (::keyboardRoot.isInitialized) {
+            keyboardRoot.isFocusableInTouchMode = true
+            keyboardRoot.requestFocus()
+        }
     }
 
     private fun isShiftActive(): Boolean {
@@ -2974,7 +3041,7 @@ class NboardImeService : InputMethodService() {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    cursorDragEnabled = !isAiMode && !isEmojiSearchActive() && !isClipboardOpen
+                    cursorDragEnabled = !isAiPromptInputActive() && !isEmojiSearchInputActive() && !isClipboardOpen
                     cursorModeActive = false
                     lastRawX = event.rawX
                     downRawX = event.rawX
@@ -3061,9 +3128,9 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun handleSpaceTap() {
-        if (isAiMode) {
+        if (isAiPromptInputActive()) {
             appendPromptText(" ")
-        } else if (isEmojiSearchActive()) {
+        } else if (isEmojiSearchInputActive()) {
             appendEmojiSearchText(" ")
         } else {
             commitKeyText(" ")
@@ -3691,7 +3758,7 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun deleteOneCharacter() {
-        if (isAiMode && ::aiPromptInput.isInitialized) {
+        if (isAiPromptInputActive()) {
             val editable = aiPromptInput.text
             val start = aiPromptInput.selectionStart
             val end = aiPromptInput.selectionEnd
@@ -3704,7 +3771,7 @@ class NboardImeService : InputMethodService() {
             }
             return
         }
-        if (isEmojiSearchActive()) {
+        if (isEmojiSearchInputActive()) {
             val editable = emojiSearchInput.text
             val start = emojiSearchInput.selectionStart
             val end = emojiSearchInput.selectionEnd
@@ -3766,11 +3833,11 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun commitKeyText(text: String) {
-        if (isAiMode) {
+        if (isAiPromptInputActive()) {
             appendPromptText(text)
             return
         }
-        if (isEmojiSearchActive()) {
+        if (isEmojiSearchInputActive()) {
             appendEmojiSearchText(text)
             return
         }
@@ -3939,6 +4006,9 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun applyAutoCorrectionBeforeDelimiter(inputConnection: InputConnection): AutoCorrectionResult? {
+        if (keyboardLanguageMode == KeyboardLanguageMode.DISABLED) {
+            return null
+        }
         val beforeCursor = inputConnection.getTextBeforeCursor(AUTOCORRECT_CONTEXT_WINDOW, 0)?.toString().orEmpty()
         val sourceWord = extractTrailingWord(beforeCursor) ?: return null
         val normalizedSource = normalizeWord(sourceWord)
@@ -4361,12 +4431,16 @@ class NboardImeService : InputMethodService() {
         return when {
             frenchScore >= englishScore + 1 -> KeyboardLanguageMode.FRENCH
             englishScore >= frenchScore + 1 -> KeyboardLanguageMode.ENGLISH
-            keyboardLanguageMode == KeyboardLanguageMode.BOTH -> null
+            keyboardLanguageMode == KeyboardLanguageMode.BOTH ||
+                keyboardLanguageMode == KeyboardLanguageMode.DISABLED -> null
             else -> keyboardLanguageMode
         }
     }
 
     private fun isLanguageEnabled(language: KeyboardLanguageMode): Boolean {
+        if (keyboardLanguageMode == KeyboardLanguageMode.DISABLED) {
+            return false
+        }
         return keyboardLanguageMode == KeyboardLanguageMode.BOTH || keyboardLanguageMode == language
     }
 
@@ -4375,6 +4449,7 @@ class NboardImeService : InputMethodService() {
         contextLanguage: KeyboardLanguageMode?
     ): Int {
         return when {
+            keyboardLanguageMode == KeyboardLanguageMode.DISABLED -> 0
             keyboardLanguageMode == KeyboardLanguageMode.BOTH && contextLanguage == null -> 0
             contextLanguage != null && candidateLanguage == contextLanguage -> 0
             candidateLanguage == keyboardLanguageMode -> 1
@@ -5080,9 +5155,13 @@ class NboardImeService : InputMethodService() {
             }
             optionViews.add(action)
             optionActions.add {
-                onAction()
-                renderClipboardItems()
-                refreshUi()
+                try {
+                    onAction()
+                    renderClipboardItems()
+                    refreshUi()
+                } catch (error: Exception) {
+                    Log.e(TAG, "Clipboard action failed", error)
+                }
             }
             optionEnabled.add(enabled)
             row.addView(action)
@@ -5099,6 +5178,8 @@ class NboardImeService : InputMethodService() {
             refreshUi()
             aiPromptInput.setText(text)
             aiPromptInput.setSelection(aiPromptInput.text?.length ?: 0)
+            aiPromptInput.requestFocus()
+            inlineInputTarget = InlineInputTarget.AI_PROMPT
         }
         addAction(R.drawable.ic_pin_lucide, selected = pinned) {
             clipboardHistoryStore.setPinned(text, !pinned)
@@ -5661,6 +5742,12 @@ private enum class ShiftMode {
     OFF,
     ONE_SHOT,
     CAPS_LOCK
+}
+
+private enum class InlineInputTarget {
+    NONE,
+    AI_PROMPT,
+    EMOJI_SEARCH
 }
 
 private enum class QuickAiAction {
