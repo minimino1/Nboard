@@ -1,6 +1,8 @@
 package com.nboard.ime
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -8,9 +10,12 @@ import android.text.InputType
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
@@ -20,6 +25,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var keyboardValue: TextView
     private lateinit var wordPredictionValue: TextView
     private lateinit var swipeTypingValue: TextView
+    private lateinit var swipeTrailValue: TextView
+    private lateinit var voiceInputValue: TextView
+    private lateinit var swipeTrailRow: View
+    private lateinit var swipeTrailDivider: View
     private lateinit var leftKeyModesValue: TextView
     private lateinit var rightKeyModesValue: TextView
     private lateinit var themeValue: TextView
@@ -35,6 +44,10 @@ class MainActivity : AppCompatActivity() {
         keyboardValue = findViewById(R.id.keyboardValue)
         wordPredictionValue = findViewById(R.id.wordPredictionValue)
         swipeTypingValue = findViewById(R.id.swipeTypingValue)
+        swipeTrailValue = findViewById(R.id.swipeTrailValue)
+        voiceInputValue = findViewById(R.id.voiceInputValue)
+        swipeTrailRow = findViewById(R.id.swipeTrailRow)
+        swipeTrailDivider = findViewById(R.id.swipeTrailDivider)
         leftKeyModesValue = findViewById(R.id.leftKeyModesValue)
         rightKeyModesValue = findViewById(R.id.rightKeyModesValue)
         themeValue = findViewById(R.id.themeValue)
@@ -91,6 +104,14 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.swipeTypingRow).setOnClickListener {
             showSwipeTypingDialog()
+        }
+
+        swipeTrailRow.setOnClickListener {
+            showSwipeTrailDialog()
+        }
+
+        findViewById<View>(R.id.voiceInputRow).setOnClickListener {
+            showVoiceInputDialog()
         }
 
         findViewById<View>(R.id.leftKeyModesRow).setOnClickListener {
@@ -290,6 +311,46 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showVoiceInputDialog() {
+        val enabled = KeyboardModeSettings.loadVoiceInputEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Voice input")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                val shouldEnable = which == 0
+                KeyboardModeSettings.saveVoiceInputEnabled(this, shouldEnable)
+                if (shouldEnable && !hasRecordAudioPermission()) {
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(Manifest.permission.RECORD_AUDIO),
+                        REQUEST_RECORD_AUDIO_PERMISSION
+                    )
+                }
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSwipeTrailDialog() {
+        val enabled = KeyboardModeSettings.loadSwipeTrailEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Showing the trail")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveSwipeTrailEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun refreshValues() {
         statusText.text = maskApiKeyForDisplay(KeyboardModeSettings.loadGeminiApiKey(this))
         languageValue.text = when (KeyboardModeSettings.loadLanguageMode(this)) {
@@ -307,7 +368,20 @@ class MainActivity : AppCompatActivity() {
         } else {
             "Disabled"
         }
-        swipeTypingValue.text = if (KeyboardModeSettings.loadSwipeTypingEnabled(this)) {
+        val swipeTypingEnabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
+        swipeTypingValue.text = if (swipeTypingEnabled) {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+        swipeTrailValue.text = if (KeyboardModeSettings.loadSwipeTrailEnabled(this)) {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+        swipeTrailRow.visibility = if (swipeTypingEnabled) View.VISIBLE else View.GONE
+        swipeTrailDivider.visibility = if (swipeTypingEnabled) View.VISIBLE else View.GONE
+        voiceInputValue.text = if (KeyboardModeSettings.loadVoiceInputEnabled(this)) {
             "Enabled"
         } else {
             "Disabled"
@@ -390,6 +464,38 @@ class MainActivity : AppCompatActivity() {
         if (!KeyboardModeSettings.loadOnboardingCompleted(this)) {
             startActivity(Intent(this, OnboardingActivity::class.java))
         }
+    }
+
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_RECORD_AUDIO_PERMISSION) {
+            return
+        }
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            KeyboardModeSettings.saveVoiceInputEnabled(this, false)
+            refreshValues()
+            Toast.makeText(
+                this,
+                "Microphone permission denied. Voice input disabled.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    companion object {
+        private const val REQUEST_RECORD_AUDIO_PERMISSION = 1004
     }
 }
 

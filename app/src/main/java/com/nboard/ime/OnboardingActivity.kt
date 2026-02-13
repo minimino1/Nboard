@@ -47,6 +47,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var aiEnabledValue: TextView
     private lateinit var wordPredictionValue: TextView
     private lateinit var swipeTypingValue: TextView
+    private lateinit var voiceRecognitionValue: TextView
     private lateinit var apiKeyInput: EditText
     private lateinit var focusInput: EditText
 
@@ -55,6 +56,7 @@ class OnboardingActivity : AppCompatActivity() {
     private var aiEnabled = false
     private var predictionEnabled = true
     private var swipeEnabled = true
+    private var voiceRecognitionEnabled = true
     private var visibleSection: View? = null
     private var isExitAnimating = false
     private var didPersistOnboarding = false
@@ -101,6 +103,7 @@ class OnboardingActivity : AppCompatActivity() {
         aiEnabledValue = findViewById(R.id.onboardingAiEnabledValue)
         wordPredictionValue = findViewById(R.id.onboardingWordPredictionValue)
         swipeTypingValue = findViewById(R.id.onboardingSwipeTypingValue)
+        voiceRecognitionValue = findViewById(R.id.onboardingVoiceRecognitionValue)
         apiKeyInput = findViewById(R.id.onboardingApiKeyInput)
         focusInput = findViewById(R.id.onboardingFocusInput)
 
@@ -140,6 +143,7 @@ class OnboardingActivity : AppCompatActivity() {
         selectedLayoutMode = KeyboardModeSettings.loadLayoutMode(this)
         predictionEnabled = KeyboardModeSettings.loadWordPredictionEnabled(this)
         swipeEnabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
+        voiceRecognitionEnabled = KeyboardModeSettings.loadVoiceInputEnabled(this)
         val existingApiKey = KeyboardModeSettings.loadGeminiApiKey(this)
         val (leftMode, rightMode) = KeyboardModeSettings.load(this)
         aiEnabled = existingApiKey.isNotBlank() || leftMode == BottomKeyMode.AI || rightMode == BottomKeyMode.AI
@@ -148,6 +152,7 @@ class OnboardingActivity : AppCompatActivity() {
         aiEnabledValue.text = if (aiEnabled) "Enabled" else "Disabled"
         wordPredictionValue.text = if (predictionEnabled) "Enabled" else "Disabled"
         swipeTypingValue.text = if (swipeEnabled) "Enabled" else "Disabled"
+        voiceRecognitionValue.text = if (voiceRecognitionEnabled) "Enabled" else "Disabled"
         apiKeyInput.setText(existingApiKey)
         apiKeyInput.setSelection(apiKeyInput.text?.length ?: 0)
     }
@@ -202,6 +207,16 @@ class OnboardingActivity : AppCompatActivity() {
             ) { enabled ->
                 swipeEnabled = enabled
                 swipeTypingValue.text = if (enabled) "Enabled" else "Disabled"
+            }
+        }
+
+        findViewById<View>(R.id.onboardingVoiceRecognitionRow).setOnClickListener {
+            showEnabledDialog(
+                title = "Voice recognition",
+                currentEnabled = voiceRecognitionEnabled
+            ) { enabled ->
+                voiceRecognitionEnabled = enabled
+                voiceRecognitionValue.text = if (enabled) "Enabled" else "Disabled"
             }
         }
     }
@@ -437,6 +452,7 @@ class OnboardingActivity : AppCompatActivity() {
         KeyboardModeSettings.saveLayoutMode(this, selectedLayoutMode)
         KeyboardModeSettings.saveWordPredictionEnabled(this, predictionEnabled)
         KeyboardModeSettings.saveSwipeTypingEnabled(this, swipeEnabled)
+        KeyboardModeSettings.saveVoiceInputEnabled(this, voiceRecognitionEnabled)
 
         if (aiEnabled) {
             if (apiKey.isNotBlank()) {

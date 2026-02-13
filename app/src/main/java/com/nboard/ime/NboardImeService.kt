@@ -1,10 +1,13 @@
 package com.nboard.ime
 
+import android.Manifest
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -18,10 +21,15 @@ import android.icu.text.BreakIterator
 import android.inputmethodservice.InputMethodService
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
@@ -88,6 +96,8 @@ class NboardImeService : InputMethodService() {
     private var interTypeface: Typeface? = null
 
     private lateinit var keyboardRoot: LinearLayout
+    private lateinit var voiceInputGlow: View
+    private lateinit var swipeTrailView: SwipeTrailView
     private lateinit var aiQuickActionsRow: LinearLayout
     private lateinit var aiSummarizeButton: Button
     private lateinit var aiFixGrammarButton: Button
@@ -123,7 +133,7 @@ class NboardImeService : InputMethodService() {
     private lateinit var predictionSeparator1: TextView
     private lateinit var predictionSeparator2: TextView
 
-    private lateinit var keyRowsContainer: LinearLayout
+    private lateinit var keyRowsContainer: ViewGroup
     private lateinit var row1: LinearLayout
     private lateinit var row2: LinearLayout
     private lateinit var row3: LinearLayout
@@ -157,6 +167,8 @@ class NboardImeService : InputMethodService() {
     private var appThemeMode = AppThemeMode.SYSTEM
     private var wordPredictionEnabled = true
     private var swipeTypingEnabled = true
+    private var swipeTrailEnabled = true
+    private var voiceInputEnabled = true
 
     private val emojiUsageCounts = mutableMapOf<String, Int>()
     private val emojiRecents = ArrayDeque<String>()
@@ -177,8 +189,12 @@ class NboardImeService : InputMethodService() {
     private var activeVariantSession: VariantSelectionSession? = null
     private var activeSwipePopupSession: SwipePopupSession? = null
     private var pendingAutoCorrection: AutoCorrectionUndo? = null
+    private var activeVoiceRecognizer: SpeechRecognizer? = null
     private var aiPillShimmerAnimator: ValueAnimator? = null
     private var aiTextPulseAnimator: ValueAnimator? = null
+    private var voiceGlowAnimator: ValueAnimator? = null
+    private var voiceActionPulseAnimator: ValueAnimator? = null
+    private var voiceActionPulseForStopping = false
     private var latestClipboardText: String? = null
     private var latestClipboardImageUri: Uri? = null
     private var latestClipboardImageMimeType: String? = null
@@ -193,6 +209,14 @@ class NboardImeService : InputMethodService() {
     private val remotePredictionCache = LinkedHashMap<String, String>(REMOTE_PREDICTION_CACHE_SIZE, 0.75f, true)
     private val swipeLetterKeyByView = LinkedHashMap<View, String>()
     private var activeSwipeTypingSession: SwipeTypingSession? = null
+    private var isVoiceListening = false
+    private var isVoiceStopping = false
+    private var voiceShouldAutoRestart = false
+    private var voiceLastTranscript = ""
+    private var voiceLeadingPrefix = ""
+    private var voiceHasActiveComposition = false
+    private var voiceReleaseStopJob: Job? = null
+    private var voiceFinalizeFallbackJob: Job? = null
     private var activeEditorPackage: String? = null
 
     private val remotePredictionHttpClient by lazy {
@@ -240,6 +264,8 @@ class NboardImeService : InputMethodService() {
     override fun onDestroy() {
         dismissActivePopup()
         stopAiProcessingAnimations()
+        stopVoiceInput(forceCancel = true)
+        destroyVoiceRecognizer()
         savePredictionLearning(force = true)
         recentClipboardExpiryJob?.cancel()
         remotePredictionJob?.cancel()
@@ -279,6 +305,7 @@ class NboardImeService : InputMethodService() {
         lastShiftTapAtMs = 0L
         isGenerating = false
         stopAiProcessingAnimations()
+        stopVoiceInput(forceCancel = true)
         pendingAutoCorrection = null
         activeSwipeTypingSession = null
         inlineInputTarget = InlineInputTarget.NONE
@@ -294,6 +321,14 @@ class NboardImeService : InputMethodService() {
         reloadTypingSettings()
         reloadBottomModesFromSettings()
         keyboardUiContext = createKeyboardUiContext()
+        if (!voiceInputEnabled) {
+            stopVoiceInput(forceCancel = true)
+        } else {
+            ensureVoiceRecognizer()
+        }
+        if (!swipeTrailEnabled && ::swipeTrailView.isInitialized) {
+            swipeTrailView.fadeOutTrail()
+        }
         refreshAutoShiftFromContext()
         if (::aiModeButton.isInitialized) {
             applyTypographyAndIcons()
@@ -309,6 +344,7 @@ class NboardImeService : InputMethodService() {
         super.onFinishInputView(finishingInput)
         dismissActivePopup()
         stopAiProcessingAnimations()
+        stopVoiceInput(forceCancel = true)
         setGenerating(false)
         isAiMode = false
         isClipboardOpen = false
@@ -341,6 +377,8 @@ class NboardImeService : InputMethodService() {
         keyboardFontMode = KeyboardModeSettings.loadFontMode(this)
         wordPredictionEnabled = KeyboardModeSettings.loadWordPredictionEnabled(this)
         swipeTypingEnabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
+        swipeTrailEnabled = KeyboardModeSettings.loadSwipeTrailEnabled(this)
+        voiceInputEnabled = KeyboardModeSettings.loadVoiceInputEnabled(this)
         interTypeface = when (keyboardFontMode) {
             KeyboardFontMode.INTER -> ResourcesCompat.getFont(this, R.font.inter_variable)
             KeyboardFontMode.ROBOTO -> Typeface.create("sans-serif", Typeface.NORMAL)
@@ -417,6 +455,8 @@ class NboardImeService : InputMethodService() {
 
     private fun bindViews(root: View) {
         keyboardRoot = root.findViewById(R.id.keyboardRoot)
+        voiceInputGlow = root.findViewById(R.id.voiceInputGlow)
+        swipeTrailView = root.findViewById(R.id.swipeTrailView)
 
         aiQuickActionsRow = root.findViewById(R.id.aiQuickActionsRow)
         aiSummarizeButton = root.findViewById(R.id.aiSummarizeButton)
@@ -721,7 +761,22 @@ class NboardImeService : InputMethodService() {
             performBottomModeTap(rightBottomMode)
         }
 
-        bindPressAction(actionButton) {
+        configureKeyTouch(
+            view = actionButton,
+            repeatOnHold = false,
+            longPressAction = { _, _, _ ->
+                if (isVoiceInputLongPressAvailable()) {
+                    startVoiceInput()
+                }
+            },
+            tapOnDown = false,
+            onLongPressEnd = {
+                stopVoiceInput(forceCancel = false)
+            }
+        ) {
+            if (isVoiceListening || isVoiceStopping) {
+                return@configureKeyTouch
+            }
             if (isAiPromptInputActive()) {
                 submitAiPrompt()
             } else if (isClipboardOpen) {
@@ -833,6 +888,9 @@ class NboardImeService : InputMethodService() {
         renderRecentClipboardRow()
         renderPredictionRow()
         renderEmojiSuggestions()
+        if (isVoiceListening && !isVoiceInputLongPressAvailable()) {
+            stopVoiceInput(forceCancel = true)
+        }
         val aiAllowed = isAiAllowedInCurrentContext()
         if (!aiAllowed && isAiMode) {
             isAiMode = false
@@ -875,7 +933,10 @@ class NboardImeService : InputMethodService() {
             setIcon(clipboardButton, R.drawable.ic_smile_lucide, R.color.key_text)
         }
 
-        if (isAiMode) {
+        if (isVoiceListening || isVoiceStopping) {
+            actionButton.background = uiDrawable(R.drawable.bg_ai_button)
+            setIcon(actionButton, R.drawable.ic_mic_lucide, R.color.ai_text)
+        } else if (isAiMode) {
             actionButton.background = uiDrawable(R.drawable.bg_ai_button)
             setIcon(actionButton, R.drawable.ic_circle_arrow_right_lucide, R.color.ai_text)
         } else if (isClipboardOpen) {
@@ -1023,6 +1084,7 @@ class NboardImeService : InputMethodService() {
         recentClipboardChip.isEnabled = !generating
         recentClipboardChevronButton.isEnabled = !generating
         syncAiProcessingAnimations()
+        syncVoiceInputGlowAnimation()
     }
 
     private fun setVisibleAnimated(view: View, visible: Boolean) {
@@ -1138,6 +1200,407 @@ class NboardImeService : InputMethodService() {
             }
             start()
         }
+    }
+
+    private fun syncVoiceInputGlowAnimation() {
+        stopVoiceInputGlowAnimation()
+        syncVoiceActionPulseAnimation()
+    }
+
+    private fun syncVoiceActionPulseAnimation() {
+        if (!::actionButton.isInitialized) {
+            return
+        }
+        val shouldPulse = isVoiceListening || isVoiceStopping
+        if (!shouldPulse) {
+            stopVoiceActionPulseAnimation()
+            return
+        }
+        startVoiceActionPulseAnimation(stopping = isVoiceStopping)
+    }
+
+    private fun startVoiceActionPulseAnimation(stopping: Boolean) {
+        if (voiceActionPulseAnimator != null && voiceActionPulseForStopping == stopping) {
+            return
+        }
+        stopVoiceActionPulseAnimation()
+        voiceActionPulseForStopping = stopping
+        val minScale = if (stopping) 1.01f else 1.03f
+        val maxScale = if (stopping) 1.06f else 1.1f
+        val minAlpha = if (stopping) 0.92f else 0.96f
+        voiceActionPulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (stopping) 720L else 560L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            addUpdateListener { animator ->
+                val progress = animator.animatedValue as Float
+                val scale = minScale + ((maxScale - minScale) * progress)
+                actionButton.scaleX = scale
+                actionButton.scaleY = scale
+                actionButton.alpha = minAlpha + ((1f - minAlpha) * progress)
+            }
+            start()
+        }
+    }
+
+    private fun stopVoiceActionPulseAnimation() {
+        voiceActionPulseAnimator?.cancel()
+        voiceActionPulseAnimator = null
+        if (::actionButton.isInitialized) {
+            actionButton.scaleX = 1f
+            actionButton.scaleY = 1f
+            actionButton.alpha = 1f
+        }
+    }
+
+    private fun stopVoiceInputGlowAnimation() {
+        voiceGlowAnimator?.cancel()
+        voiceGlowAnimator = null
+        if (::voiceInputGlow.isInitialized) {
+            voiceInputGlow.isVisible = false
+            voiceInputGlow.alpha = 0f
+        }
+    }
+
+    private fun refreshVoiceUiState() {
+        if (::actionButton.isInitialized) {
+            refreshUi()
+        } else {
+            syncVoiceInputGlowAnimation()
+        }
+    }
+
+    private fun startVoiceInput() {
+        if (isVoiceListening || isVoiceStopping || !isVoiceInputLongPressAvailable()) {
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            toast("Voice input is not available on this device")
+            return
+        }
+        if (!hasRecordAudioPermission()) {
+            toast("Enable microphone permission for Nboard in app settings")
+            return
+        }
+
+        val recognizer = ensureVoiceRecognizer() ?: return
+        cancelVoiceStopJobs()
+        resetVoiceTranscriptState()
+        voiceLeadingPrefix = computeVoiceLeadingPrefix()
+        voiceShouldAutoRestart = true
+        isVoiceStopping = false
+        isVoiceListening = true
+        refreshVoiceUiState()
+        runCatching {
+            recognizer.startListening(buildVoiceRecognizerIntent())
+        }.onFailure {
+            Log.w(TAG, "Failed to start voice input", it)
+            voiceShouldAutoRestart = false
+            isVoiceListening = false
+            isVoiceStopping = false
+            refreshVoiceUiState()
+        }
+    }
+
+    private fun stopVoiceInput(forceCancel: Boolean) {
+        val recognizer = activeVoiceRecognizer
+        if (!forceCancel && !isVoiceListening && !isVoiceStopping) {
+            return
+        }
+        cancelVoiceStopJobs()
+        voiceShouldAutoRestart = false
+
+        if (forceCancel) {
+            isVoiceListening = false
+            isVoiceStopping = false
+            runCatching {
+                recognizer?.cancel()
+            }.onFailure {
+                Log.w(TAG, "Failed to cancel voice input", it)
+            }
+            finalizeVoiceComposition()
+            resetVoiceTranscriptState()
+            refreshVoiceUiState()
+            return
+        }
+
+        if (isVoiceStopping) {
+            return
+        }
+
+        if (recognizer == null) {
+            if (voiceLastTranscript.isNotBlank()) {
+                commitVoiceTranscript(voiceLastTranscript, isFinal = true)
+            } else {
+                finalizeVoiceComposition()
+            }
+            isVoiceListening = false
+            isVoiceStopping = false
+            resetVoiceTranscriptState()
+            refreshVoiceUiState()
+            return
+        }
+
+        isVoiceStopping = true
+        refreshVoiceUiState()
+        voiceReleaseStopJob = serviceScope.launch(Dispatchers.Main) {
+            delay(VOICE_RELEASE_GRACE_MS)
+            runCatching {
+                recognizer.stopListening()
+            }.onFailure {
+                Log.w(TAG, "Failed to stop voice input", it)
+            }
+            isVoiceListening = false
+            syncVoiceInputGlowAnimation()
+            scheduleVoiceFinalizeFallback()
+        }
+    }
+
+    private fun cancelVoiceStopJobs() {
+        voiceReleaseStopJob?.cancel()
+        voiceReleaseStopJob = null
+        voiceFinalizeFallbackJob?.cancel()
+        voiceFinalizeFallbackJob = null
+    }
+
+    private fun scheduleVoiceFinalizeFallback() {
+        voiceFinalizeFallbackJob?.cancel()
+        voiceFinalizeFallbackJob = serviceScope.launch(Dispatchers.Main) {
+            delay(VOICE_FINALIZE_FALLBACK_MS)
+            if (!isVoiceStopping) {
+                return@launch
+            }
+            if (voiceLastTranscript.isNotBlank()) {
+                commitVoiceTranscript(voiceLastTranscript, isFinal = true)
+            } else {
+                finalizeVoiceComposition()
+            }
+            isVoiceListening = false
+            isVoiceStopping = false
+            voiceShouldAutoRestart = false
+            resetVoiceTranscriptState()
+            refreshVoiceUiState()
+        }
+    }
+
+    private fun ensureVoiceRecognizer(): SpeechRecognizer? {
+        activeVoiceRecognizer?.let { return it }
+        return runCatching {
+            val recognizer = if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+            ) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(this)
+            }
+
+            recognizer.also {
+                recognizer.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) = Unit
+                    override fun onBeginningOfSpeech() = Unit
+                    override fun onRmsChanged(rmsdB: Float) = Unit
+                    override fun onBufferReceived(buffer: ByteArray?) = Unit
+                    override fun onEndOfSpeech() = Unit
+                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        serviceScope.launch(Dispatchers.Main.immediate) {
+                            if (!isVoiceListening && !isVoiceStopping) {
+                                return@launch
+                            }
+                            val transcript = extractVoiceTranscript(partialResults)
+                            if (transcript.isBlank()) {
+                                return@launch
+                            }
+                            commitVoiceTranscript(transcript, isFinal = false)
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        serviceScope.launch(Dispatchers.Main.immediate) {
+                            cancelVoiceStopJobs()
+                            val transcript = extractVoiceTranscript(results)
+                            if (transcript.isNotBlank()) {
+                                commitVoiceTranscript(transcript, isFinal = true)
+                            } else if (voiceLastTranscript.isNotBlank()) {
+                                commitVoiceTranscript(voiceLastTranscript, isFinal = true)
+                            } else {
+                                finalizeVoiceComposition()
+                            }
+                            val continueListening = isVoiceListening && voiceShouldAutoRestart && !isVoiceStopping
+                            resetVoiceTranscriptState()
+                            if (continueListening) {
+                                voiceLeadingPrefix = computeVoiceLeadingPrefix()
+                                restartVoiceListening()
+                            } else {
+                                isVoiceListening = false
+                                isVoiceStopping = false
+                                voiceShouldAutoRestart = false
+                                syncVoiceInputGlowAnimation()
+                                refreshVoiceUiState()
+                            }
+                        }
+                    }
+
+                    override fun onError(error: Int) {
+                        serviceScope.launch(Dispatchers.Main.immediate) {
+                            cancelVoiceStopJobs()
+                            if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                                Log.w(TAG, "Voice input permission denied by recognizer")
+                                voiceShouldAutoRestart = false
+                                isVoiceListening = false
+                                isVoiceStopping = false
+                                finalizeVoiceComposition()
+                                resetVoiceTranscriptState()
+                                refreshVoiceUiState()
+                                toast("Microphone permission is required for voice input")
+                                return@launch
+                            }
+                            val canRestart = isVoiceListening && voiceShouldAutoRestart && !isVoiceStopping
+                            if (!canRestart) {
+                                if (voiceLastTranscript.isNotBlank()) {
+                                    commitVoiceTranscript(voiceLastTranscript, isFinal = true)
+                                } else {
+                                    finalizeVoiceComposition()
+                                }
+                                voiceShouldAutoRestart = false
+                                isVoiceListening = false
+                                isVoiceStopping = false
+                                resetVoiceTranscriptState()
+                                syncVoiceInputGlowAnimation()
+                                refreshVoiceUiState()
+                                return@launch
+                            }
+                            Log.w(TAG, "Voice input error: $error")
+                            finalizeVoiceComposition()
+                            resetVoiceTranscriptState()
+                            voiceLeadingPrefix = computeVoiceLeadingPrefix()
+                            restartVoiceListening()
+                        }
+                    }
+                })
+            }
+        }.onFailure {
+            Log.e(TAG, "Failed to initialize voice recognizer", it)
+            toast("Voice input failed to initialize")
+        }.getOrNull()
+            ?.also { activeVoiceRecognizer = it }
+    }
+
+    private fun restartVoiceListening() {
+        serviceScope.launch(Dispatchers.Main) {
+            delay(VOICE_RESTART_DELAY_MS)
+            if (!isVoiceListening || !voiceShouldAutoRestart || isVoiceStopping) {
+                return@launch
+            }
+            val recognizer = activeVoiceRecognizer ?: return@launch
+            runCatching {
+                recognizer.startListening(buildVoiceRecognizerIntent())
+            }.onFailure {
+                Log.w(TAG, "Failed to restart voice input", it)
+                voiceShouldAutoRestart = false
+                isVoiceListening = false
+                isVoiceStopping = false
+                refreshVoiceUiState()
+            }
+        }
+    }
+
+    private fun destroyVoiceRecognizer() {
+        cancelVoiceStopJobs()
+        activeVoiceRecognizer?.let { recognizer ->
+            runCatching { recognizer.destroy() }
+        }
+        activeVoiceRecognizer = null
+    }
+
+    private fun buildVoiceRecognizerIntent(): Intent {
+        val languageTag = when (keyboardLanguageMode) {
+            KeyboardLanguageMode.FRENCH -> "fr-FR"
+            KeyboardLanguageMode.ENGLISH -> "en-US"
+            else -> Locale.getDefault().toLanguageTag()
+        }
+        return Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1600L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 950L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 0L)
+        }
+    }
+
+    private fun extractVoiceTranscript(bundle: Bundle?): String {
+        val result = bundle
+            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            ?.firstOrNull()
+            .orEmpty()
+        return result.trim()
+    }
+
+    private fun commitVoiceTranscript(transcript: String, isFinal: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            serviceScope.launch(Dispatchers.Main.immediate) {
+                commitVoiceTranscript(transcript, isFinal)
+            }
+            return
+        }
+        val normalized = transcript.trim()
+        if (normalized.isBlank()) {
+            if (isFinal) {
+                finalizeVoiceComposition()
+            }
+            return
+        }
+        if (normalized == voiceLastTranscript && !isFinal) {
+            return
+        }
+        val inputConnection = currentInputConnection ?: return
+        val composingText = voiceLeadingPrefix + normalized
+        if (composingText.isNotEmpty()) {
+            inputConnection.setComposingText(composingText, 1)
+            voiceHasActiveComposition = true
+        }
+        if (isFinal) {
+            inputConnection.finishComposingText()
+            voiceHasActiveComposition = false
+        }
+        voiceLastTranscript = normalized
+        pendingAutoCorrection = null
+        refreshAutoShiftFromContextAndRerender()
+    }
+
+    private fun finalizeVoiceComposition() {
+        if (!voiceHasActiveComposition) {
+            return
+        }
+        currentInputConnection?.finishComposingText()
+        voiceHasActiveComposition = false
+    }
+
+    private fun computeVoiceLeadingPrefix(): String {
+        val beforeCursor = currentInputConnection?.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+        if (beforeCursor.isBlank()) {
+            return ""
+        }
+        return if (beforeCursor.last().isWhitespace()) "" else " "
+    }
+
+    private fun resetVoiceTranscriptState() {
+        voiceLastTranscript = ""
+        voiceLeadingPrefix = ""
+        voiceHasActiveComposition = false
+    }
+
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun sendOrEnter() {
@@ -3153,10 +3616,20 @@ class NboardImeService : InputMethodService() {
         if (!swipeTypingEnabled) {
             return false
         }
-        if (isNumbersMode || isEmojiMode || isClipboardOpen || isAiMode || isGenerating) {
+        if (isNumbersMode || isEmojiMode || isClipboardOpen || isAiMode || isGenerating || isVoiceListening || isVoiceStopping) {
             return false
         }
         return true
+    }
+
+    private fun isVoiceInputLongPressAvailable(): Boolean {
+        if (!voiceInputEnabled) {
+            return false
+        }
+        if (isNumbersMode || isEmojiMode || isClipboardOpen || isAiMode || isGenerating) {
+            return false
+        }
+        return currentInputConnection != null
     }
 
     private fun beginSwipeTyping(anchorView: View, token: String, rawX: Float, rawY: Float): Boolean {
@@ -3173,13 +3646,22 @@ class NboardImeService : InputMethodService() {
             rawStartY = rawY,
             tokens = mutableListOf(token),
             dwellDurationsMs = mutableListOf(0L),
+            trailPoints = mutableListOf(),
             lastTokenEnteredAtMs = now,
             isSwiping = false
         )
+        if (swipeTrailEnabled) {
+            appendSwipeTrailPoint(rawX, rawY, force = true)
+        } else if (::swipeTrailView.isInitialized) {
+            swipeTrailView.fadeOutTrail()
+        }
         return true
     }
 
     private fun cancelSwipeTyping() {
+        if (::swipeTrailView.isInitialized) {
+            swipeTrailView.fadeOutTrail()
+        }
         activeSwipeTypingSession = null
     }
 
@@ -3198,6 +3680,8 @@ class NboardImeService : InputMethodService() {
         if (!session.isSwiping) {
             return false
         }
+
+        appendSwipeTrailPoint(rawX, rawY, force = false)
 
         val token = findSwipeTokenAt(rawX, rawY) ?: return true
         val last = session.tokens.lastOrNull()
@@ -3219,6 +3703,9 @@ class NboardImeService : InputMethodService() {
     private fun finishSwipeTypingAndCommit(): Boolean {
         val session = activeSwipeTypingSession ?: return false
         activeSwipeTypingSession = null
+        if (::swipeTrailView.isInitialized) {
+            swipeTrailView.fadeOutTrail()
+        }
         if (!session.isSwiping) {
             return false
         }
@@ -3233,12 +3720,48 @@ class NboardImeService : InputMethodService() {
         if (intentTokens.size < 2) {
             return false
         }
-        val resolved = resolveSwipeWord(intentTokens).orEmpty()
+        val resolved = resolveSwipeWord(intentTokens, session).orEmpty()
         if (resolved.isBlank()) {
             return false
         }
         commitSwipeWord(resolved)
         return true
+    }
+
+    private fun appendSwipeTrailPoint(rawX: Float, rawY: Float, force: Boolean) {
+        if (!swipeTrailEnabled) {
+            return
+        }
+        val session = activeSwipeTypingSession ?: return
+        if (!::keyRowsContainer.isInitialized || !::swipeTrailView.isInitialized) {
+            return
+        }
+        val location = IntArray(2)
+        keyRowsContainer.getLocationOnScreen(location)
+        val localX = rawX - location[0]
+        val localY = rawY - location[1]
+        if (!force) {
+            val last = session.trailPoints.lastOrNull()
+            if (last != null) {
+                val dx = localX - last.x
+                val dy = localY - last.y
+                val minDistance = dp(SWIPE_TRAIL_MIN_STEP_DP).toFloat()
+                if ((dx * dx + dy * dy) < (minDistance * minDistance)) {
+                    return
+                }
+            }
+        }
+        session.trailPoints.add(
+            SwipeTrailView.TrailPoint(
+                x = localX,
+                y = localY,
+                timestampMs = SystemClock.elapsedRealtime()
+            )
+        )
+        if (session.trailPoints.size > SWIPE_TRAIL_MAX_POINTS) {
+            session.trailPoints.removeAt(0)
+        }
+        swipeTrailView.updateTrail(session.trailPoints)
     }
 
     private fun findSwipeTokenAt(rawX: Float, rawY: Float): String? {
@@ -3300,7 +3823,7 @@ class NboardImeService : InputMethodService() {
         return reduced
     }
 
-    private fun resolveSwipeWord(tokens: List<String>): String? {
+    private fun resolveSwipeWord(tokens: List<String>, session: SwipeTypingSession): String? {
         if (tokens.isEmpty()) {
             return null
         }
@@ -3324,6 +3847,7 @@ class NboardImeService : InputMethodService() {
             .orEmpty()
         val sentenceContext = extractPredictionSentenceContext(beforeCursor)
         val (previousWord2, previousWord1) = extractPreviousWordsForPrediction(sentenceContext, "")
+        val contextLanguage = detectContextLanguage(beforeCursor)
 
         val candidates = LinkedHashSet<String>()
         learnedWordFrequency.entries
@@ -3370,11 +3894,21 @@ class NboardImeService : InputMethodService() {
 
             var score = shapeDistance * 14
             score += kotlin.math.abs(collapsedCandidate.length - collapsedPath.length) * 3
+            val rawDistanceLimit = (distanceLimit + 2).coerceAtMost(12)
+            val rawDistance = levenshteinDistanceBounded(foldedPath, foldedCandidate, rawDistanceLimit)
+            score += if (rawDistance == Int.MAX_VALUE) 28 else rawDistance * 7
+            score += swipeBigramMismatchPenalty(collapsedPath, collapsedCandidate)
+            score -= commonPrefixLength(collapsedPath, collapsedCandidate) * 3
             if (collapsedCandidate.lastOrNull() != pathLast) {
                 score += 12
             }
             if (!isSubsequence(collapsedPath, collapsedCandidate)) {
                 score += 16
+            }
+
+            val dominantMiddle = dominantSwipeMiddleToken(session)
+            if (!dominantMiddle.isNullOrBlank() && !collapsedCandidate.contains(dominantMiddle)) {
+                score += 8
             }
 
             val unigram = learnedWordFrequency[normalizedCandidate] ?: 0
@@ -3400,6 +3934,9 @@ class NboardImeService : InputMethodService() {
             if (FRENCH_WORDS.contains(normalizedCandidate) || ENGLISH_WORDS.contains(normalizedCandidate)) {
                 score -= 6
             }
+            detectWordLanguage(normalizedCandidate)?.let { language ->
+                score += languageBiasPenalty(language, contextLanguage) * 6
+            }
 
             if (score < bestScore) {
                 secondBestScore = bestScore
@@ -3422,6 +3959,53 @@ class NboardImeService : InputMethodService() {
             }
         }
         return null
+    }
+
+    private fun dominantSwipeMiddleToken(session: SwipeTypingSession): String? {
+        if (session.tokens.size < 3) {
+            return null
+        }
+        val middleRange = 1 until session.tokens.lastIndex
+        val bestMiddleIndex = middleRange.maxByOrNull { index ->
+            session.dwellDurationsMs.getOrNull(index) ?: 0L
+        } ?: return null
+        return normalizeWord(session.tokens[bestMiddleIndex])
+            .takeIf { it.length == 1 && it.first().isLetter() }
+    }
+
+    private fun swipeBigramMismatchPenalty(path: String, candidate: String): Int {
+        if (path.length < 2 || candidate.length < 2) {
+            return 0
+        }
+        var penalty = 0
+        for (index in 0 until path.lastIndex) {
+            val from = path[index]
+            val to = path[index + 1]
+            val firstPos = candidate.indexOf(from)
+            if (firstPos < 0) {
+                penalty += 6
+                continue
+            }
+            val secondPos = candidate.indexOf(to, firstPos + 1)
+            if (secondPos < 0) {
+                penalty += 5
+                continue
+            }
+            val gap = secondPos - firstPos - 1
+            penalty += (gap * 2).coerceAtMost(6)
+        }
+        return penalty
+    }
+
+    private fun detectWordLanguage(word: String): KeyboardLanguageMode? {
+        val folded = foldWord(word)
+        val inFrench = frenchLexicon.words.contains(word) || frenchLexicon.foldedWords.contains(folded)
+        val inEnglish = englishLexicon.words.contains(word) || englishLexicon.foldedWords.contains(folded)
+        return when {
+            inFrench && !inEnglish -> KeyboardLanguageMode.FRENCH
+            inEnglish && !inFrench -> KeyboardLanguageMode.ENGLISH
+            else -> null
+        }
     }
 
     private fun isSubsequence(pattern: String, source: String): Boolean {
@@ -3483,6 +4067,7 @@ class NboardImeService : InputMethodService() {
         longPressAction: ((View, Float, Float) -> Unit)?,
         swipeToken: String? = null,
         tapOnDown: Boolean = true,
+        onLongPressEnd: (() -> Unit)? = null,
         onTap: () -> Unit
     ) {
         var longPressTriggered = false
@@ -3605,6 +4190,7 @@ class NboardImeService : InputMethodService() {
                     }
 
                     if (longPressTriggered) {
+                        onLongPressEnd?.invoke()
                         if (activeVariantSession != null) {
                             commitSelectedVariant()
                             return@setOnTouchListener true
@@ -3640,6 +4226,7 @@ class NboardImeService : InputMethodService() {
                         cancelSwipeTyping()
                     }
                     if (longPressTriggered) {
+                        onLongPressEnd?.invoke()
                         if (activeVariantSession != null) {
                             commitSelectedVariant()
                         } else if (activeSwipePopupSession != null) {
@@ -5502,8 +6089,10 @@ class NboardImeService : InputMethodService() {
         private const val SWIPE_LEXICON_SCAN_LIMIT = 3400
         private const val SWIPE_LEARNED_SCAN_LIMIT = 420
         private const val SWIPE_DISTANCE_BASE_LIMIT = 4
-        private const val SWIPE_CONFIDENT_SCORE = 34
-        private const val SWIPE_MIN_SCORE_MARGIN = 8
+        private const val SWIPE_CONFIDENT_SCORE = 30
+        private const val SWIPE_MIN_SCORE_MARGIN = 10
+        private const val SWIPE_TRAIL_MIN_STEP_DP = 2
+        private const val SWIPE_TRAIL_MAX_POINTS = 140
         private const val AUTOCORRECT_REVERT_DISABLE_THRESHOLD = 2
         private const val MAX_AUTOCORRECT_VARIANTS = 14
 
@@ -5511,6 +6100,9 @@ class NboardImeService : InputMethodService() {
         private const val MAX_RECENT_EMOJIS = 30
         private const val AI_PILL_CHAR_LIMIT = 320
         private const val AI_REPLY_CHAR_LIMIT = 420
+        private const val VOICE_RESTART_DELAY_MS = 80L
+        private const val VOICE_RELEASE_GRACE_MS = 220L
+        private const val VOICE_FINALIZE_FALLBACK_MS = 1400L
 
         private const val KEY_EMOJI_COUNTS_JSON = "emoji_usage_counts"
         private const val KEY_EMOJI_RECENTS_JSON = "emoji_recents"
@@ -5797,6 +6389,7 @@ private data class SwipeTypingSession(
     val rawStartY: Float,
     val tokens: MutableList<String>,
     val dwellDurationsMs: MutableList<Long>,
+    val trailPoints: MutableList<SwipeTrailView.TrailPoint>,
     var lastTokenEnteredAtMs: Long,
     var isSwiping: Boolean
 )

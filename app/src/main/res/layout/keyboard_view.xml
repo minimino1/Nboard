@@ -12,6 +12,15 @@
     android:paddingEnd="8dp"
     android:paddingBottom="6dp">
 
+    <View
+        android:id="@+id/voiceInputGlow"
+        android:layout_width="match_parent"
+        android:layout_height="16dp"
+        android:layout_marginBottom="4dp"
+        android:alpha="0"
+        android:background="@drawable/bg_voice_input_glow"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/aiQuickActionsRow"
         android:layout_width="match_parent"
@@ -374,34 +383,47 @@
             android:textSize="13sp" />
     </LinearLayout>
 
-    <LinearLayout
+    <FrameLayout
         android:id="@+id/keyRowsContainer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:layout_height="wrap_content">
 
         <LinearLayout
-            android:id="@+id/row1"
+            android:id="@+id/keyRowsStack"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal" />
+            android:orientation="vertical">
 
-        <LinearLayout
-            android:id="@+id/row2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal" />
+            <LinearLayout
+                android:id="@+id/row1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="horizontal" />
 
-        <LinearLayout
-            android:id="@+id/row3"
+            <LinearLayout
+                android:id="@+id/row2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="horizontal" />
+
+            <LinearLayout
+                android:id="@+id/row3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:gravity="bottom"
+                android:orientation="horizontal" />
+        </LinearLayout>
+
+        <com.nboard.ime.SwipeTrailView
+            android:id="@+id/swipeTrailView"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:gravity="bottom"
-            android:orientation="horizontal" />
-    </LinearLayout>
+            android:layout_height="match_parent"
+            android:clickable="false"
+            android:focusable="false" />
+    </FrameLayout>
 
     <LinearLayout
         android:id="@+id/bottomRow"

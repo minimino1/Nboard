@@ -47,6 +47,8 @@ object KeyboardModeSettings {
     private const val KEY_FONT_MODE = "font_mode"
     private const val KEY_WORD_PREDICTION_ENABLED = "word_prediction_enabled"
     private const val KEY_SWIPE_TYPING_ENABLED = "swipe_typing_enabled"
+    private const val KEY_SWIPE_TRAIL_ENABLED = "swipe_trail_enabled"
+    private const val KEY_VOICE_INPUT_ENABLED = "voice_input_enabled"
     private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     fun load(context: Context): Pair<BottomKeyMode, BottomKeyMode> {
@@ -220,6 +222,30 @@ object KeyboardModeSettings {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_SWIPE_TYPING_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadVoiceInputEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_VOICE_INPUT_ENABLED, true)
+    }
+
+    fun loadSwipeTrailEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SWIPE_TRAIL_ENABLED, true)
+    }
+
+    fun saveSwipeTrailEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SWIPE_TRAIL_ENABLED, enabled)
+            .apply()
+    }
+
+    fun saveVoiceInputEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_VOICE_INPUT_ENABLED, enabled)
             .apply()
     }
 
