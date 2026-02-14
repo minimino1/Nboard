@@ -327,13 +327,23 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun showLayoutDialog() {
-        val options = arrayOf("AZERTY", "QWERTY")
-        val selected = if (selectedLayoutMode == KeyboardLayoutMode.QWERTY) 1 else 0
+        val options = arrayOf("AZERTY", "QWERTY", "Gboard AZERTY", "Gboard QWERTY")
+        val selected = when (selectedLayoutMode) {
+            KeyboardLayoutMode.AZERTY -> 0
+            KeyboardLayoutMode.QWERTY -> 1
+            KeyboardLayoutMode.GBOARD_AZERTY -> 2
+            KeyboardLayoutMode.GBOARD_QWERTY -> 3
+        }
 
         AlertDialog.Builder(this)
             .setTitle("Layout")
             .setSingleChoiceItems(options, selected) { dialog, which ->
-                selectedLayoutMode = if (which == 1) KeyboardLayoutMode.QWERTY else KeyboardLayoutMode.AZERTY
+                selectedLayoutMode = when (which) {
+                    1 -> KeyboardLayoutMode.QWERTY
+                    2 -> KeyboardLayoutMode.GBOARD_AZERTY
+                    3 -> KeyboardLayoutMode.GBOARD_QWERTY
+                    else -> KeyboardLayoutMode.AZERTY
+                }
                 layoutValue.text = formatLayout(selectedLayoutMode)
                 dialog.dismiss()
             }
@@ -468,7 +478,12 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun formatLayout(mode: KeyboardLayoutMode): String {
-        return if (mode == KeyboardLayoutMode.QWERTY) "QWERTY" else "AZERTY"
+        return when (mode) {
+            KeyboardLayoutMode.AZERTY -> "AZERTY"
+            KeyboardLayoutMode.QWERTY -> "QWERTY"
+            KeyboardLayoutMode.GBOARD_AZERTY -> "Gboard AZERTY"
+            KeyboardLayoutMode.GBOARD_QWERTY -> "Gboard QWERTY"
+        }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

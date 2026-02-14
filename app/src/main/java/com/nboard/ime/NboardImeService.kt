@@ -134,14 +134,17 @@ class NboardImeService : InputMethodService() {
     private lateinit var predictionSeparator2: TextView
 
     private lateinit var keyRowsContainer: ViewGroup
+    private lateinit var row0: LinearLayout
     private lateinit var row1: LinearLayout
     private lateinit var row2: LinearLayout
     private lateinit var row3: LinearLayout
     private lateinit var bottomRow: LinearLayout
 
     private lateinit var modeSwitchButton: Button
+    private lateinit var leftPunctuationButton: Button
     private lateinit var aiModeButton: ImageButton
     private lateinit var spaceButton: Button
+    private lateinit var rightPunctuationButton: Button
     private lateinit var clipboardButton: ImageButton
     private lateinit var actionButton: ImageButton
 
@@ -169,6 +172,7 @@ class NboardImeService : InputMethodService() {
     private var swipeTypingEnabled = true
     private var swipeTrailEnabled = true
     private var voiceInputEnabled = true
+    private var isNumberRowEnabled = false
 
     private val emojiUsageCounts = mutableMapOf<String, Int>()
     private val emojiRecents = ArrayDeque<String>()
@@ -379,6 +383,7 @@ class NboardImeService : InputMethodService() {
         swipeTypingEnabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
         swipeTrailEnabled = KeyboardModeSettings.loadSwipeTrailEnabled(this)
         voiceInputEnabled = KeyboardModeSettings.loadVoiceInputEnabled(this)
+        isNumberRowEnabled = KeyboardModeSettings.loadNumberRowEnabled(this)
         interTypeface = when (keyboardFontMode) {
             KeyboardFontMode.INTER -> ResourcesCompat.getFont(this, R.font.inter_variable)
             KeyboardFontMode.ROBOTO -> Typeface.create("sans-serif", Typeface.NORMAL)
@@ -431,21 +436,35 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun reloadBottomModesFromSettings() {
-        val (leftOptions, rightOptions) = KeyboardModeSettings.loadBottomSlotOptions(this)
-        leftBottomModeOptions = leftOptions.distinct().ifEmpty { listOf(BottomKeyMode.AI, BottomKeyMode.EMOJI) }
-        rightBottomModeOptions = rightOptions.distinct().ifEmpty { listOf(BottomKeyMode.CLIPBOARD, BottomKeyMode.EMOJI) }
+        if (isGboardLayoutActive()) {
+            leftBottomModeOptions = listOf(BottomKeyMode.AI, BottomKeyMode.CLIPBOARD, BottomKeyMode.EMOJI)
+            rightBottomModeOptions = emptyList()
 
-        val (left, right) = KeyboardModeSettings.load(this)
-        leftBottomMode = if (left in leftBottomModeOptions) left else leftBottomModeOptions.first()
-        rightBottomMode = if (right in rightBottomModeOptions) right else rightBottomModeOptions.first()
-        if (left != leftBottomMode || right != rightBottomMode) {
-            KeyboardModeSettings.save(this, leftBottomMode, rightBottomMode)
+            val (left, right) = KeyboardModeSettings.load(this)
+            leftBottomMode = if (left in leftBottomModeOptions) left else BottomKeyMode.AI
+            rightBottomMode = right
+        } else {
+            val (leftOptions, rightOptions) = KeyboardModeSettings.loadBottomSlotOptions(this)
+            leftBottomModeOptions = leftOptions.distinct().ifEmpty { listOf(BottomKeyMode.AI, BottomKeyMode.EMOJI) }
+            rightBottomModeOptions = rightOptions.distinct().ifEmpty { listOf(BottomKeyMode.CLIPBOARD, BottomKeyMode.EMOJI) }
+
+            val (left, right) = KeyboardModeSettings.load(this)
+            leftBottomMode = if (left in leftBottomModeOptions) left else leftBottomModeOptions.first()
+            rightBottomMode = if (right in rightBottomModeOptions) right else rightBottomModeOptions.first()
+            if (left != leftBottomMode || right != rightBottomMode) {
+                KeyboardModeSettings.save(this, leftBottomMode, rightBottomMode)
+            }
         }
 
         if (leftBottomMode != BottomKeyMode.AI) {
             isAiMode = false
         }
-        if (leftBottomMode != BottomKeyMode.CLIPBOARD && rightBottomMode != BottomKeyMode.CLIPBOARD) {
+        val clipboardModeAvailable = if (isGboardLayoutActive()) {
+            leftBottomMode == BottomKeyMode.CLIPBOARD
+        } else {
+            leftBottomMode == BottomKeyMode.CLIPBOARD || rightBottomMode == BottomKeyMode.CLIPBOARD
+        }
+        if (!clipboardModeAvailable) {
             isClipboardOpen = false
         }
         if (!hasEmojiSlot()) {
@@ -494,25 +513,30 @@ class NboardImeService : InputMethodService() {
         predictionSeparator2 = root.findViewById(R.id.predictionSeparator2)
 
         keyRowsContainer = root.findViewById(R.id.keyRowsContainer)
+        row0 = root.findViewById(R.id.row0)
         row1 = root.findViewById(R.id.row1)
         row2 = root.findViewById(R.id.row2)
         row3 = root.findViewById(R.id.row3)
         bottomRow = root.findViewById(R.id.bottomRow)
 
         modeSwitchButton = root.findViewById(R.id.modeSwitchButton)
+        leftPunctuationButton = root.findViewById(R.id.leftPunctuationButton)
         aiModeButton = root.findViewById(R.id.aiModeButton)
         spaceButton = root.findViewById(R.id.spaceButton)
+        rightPunctuationButton = root.findViewById(R.id.rightPunctuationButton)
         clipboardButton = root.findViewById(R.id.clipboardButton)
         actionButton = root.findViewById(R.id.actionButton)
 
         keyboardRoot.clipChildren = false
         keyRowsContainer.clipChildren = false
+        row0.clipChildren = false
         row1.clipChildren = false
         row2.clipChildren = false
         row3.clipChildren = false
         bottomRow.clipChildren = false
 
         keyRowsContainer.isMotionEventSplittingEnabled = true
+        row0.isMotionEventSplittingEnabled = true
         row1.isMotionEventSplittingEnabled = true
         row2.isMotionEventSplittingEnabled = true
         row3.isMotionEventSplittingEnabled = true
@@ -530,8 +554,10 @@ class NboardImeService : InputMethodService() {
         aiExpandButton.background = uiDrawable(R.drawable.bg_ai_quick_action)
         aiPromptToggleButton.background = uiDrawable(R.drawable.bg_ai_button)
         modeSwitchButton.background = uiDrawable(R.drawable.bg_special_key)
+        leftPunctuationButton.background = uiDrawable(R.drawable.bg_key)
         aiModeButton.background = uiDrawable(R.drawable.bg_ai_button)
         spaceButton.background = uiDrawable(R.drawable.bg_space_key)
+        rightPunctuationButton.background = uiDrawable(R.drawable.bg_key)
         clipboardButton.background = uiDrawable(R.drawable.bg_special_key)
         actionButton.background = uiDrawable(R.drawable.bg_special_key)
         emojiSearchPill.background = uiDrawable(R.drawable.bg_ai_pill)
@@ -544,7 +570,11 @@ class NboardImeService : InputMethodService() {
 
         applySerifTypeface(modeSwitchButton)
         modeSwitchButton.textSize = 15f
+        applyInterTypeface(leftPunctuationButton)
+        leftPunctuationButton.textSize = 18f
         applyInterTypeface(spaceButton)
+        applyInterTypeface(rightPunctuationButton)
+        rightPunctuationButton.textSize = 18f
         applySerifTypeface(aiSummarizeButton)
         applySerifTypeface(aiFixGrammarButton)
         applySerifTypeface(aiExpandButton)
@@ -559,7 +589,19 @@ class NboardImeService : InputMethodService() {
         aiFixGrammarButton.setTextColor(uiColor(R.color.ai_text))
         aiExpandButton.setTextColor(uiColor(R.color.ai_text))
         modeSwitchButton.setTextColor(uiColor(R.color.key_text))
+        leftPunctuationButton.setTextColor(uiColor(R.color.key_text))
         spaceButton.setTextColor(uiColor(R.color.space_text))
+        rightPunctuationButton.setTextColor(uiColor(R.color.key_text))
+        leftPunctuationButton.gravity = Gravity.CENTER
+        rightPunctuationButton.gravity = Gravity.CENTER
+        leftPunctuationButton.setPadding(0, 0, 0, 0)
+        rightPunctuationButton.setPadding(0, 0, 0, 0)
+        leftPunctuationButton.minimumHeight = 0
+        rightPunctuationButton.minimumHeight = 0
+        leftPunctuationButton.minHeight = 0
+        rightPunctuationButton.minHeight = 0
+        leftPunctuationButton.translationY = dp(1).toFloat()
+        rightPunctuationButton.translationY = dp(1).toFloat()
         recentClipboardChip.setTextColor(uiColor(R.color.key_text))
         predictionWord1Button.setTextColor(uiColor(R.color.key_text))
         predictionWord2Button.setTextColor(uiColor(R.color.key_text))
@@ -572,7 +614,9 @@ class NboardImeService : InputMethodService() {
         emojiSearchInput.setHintTextColor(uiColor(R.color.ai_hint))
 
         modeSwitchButton.contentDescription = "Switch layout"
+        leftPunctuationButton.contentDescription = "Adaptive punctuation key"
         aiModeButton.contentDescription = "Left mode key"
+        rightPunctuationButton.contentDescription = "Period key"
         clipboardButton.contentDescription = "Right mode key"
         actionButton.contentDescription = "Action"
         aiPromptToggleButton.contentDescription = "Toggle AI mode"
@@ -599,7 +643,9 @@ class NboardImeService : InputMethodService() {
         flattenView(aiFixGrammarButton)
         flattenView(aiExpandButton)
         flattenView(modeSwitchButton)
+        flattenView(leftPunctuationButton)
         flattenView(spaceButton)
+        flattenView(rightPunctuationButton)
         flattenView(aiPromptInput)
         flattenView(aiPromptToggleButton)
         flattenView(aiModeButton)
@@ -689,6 +735,37 @@ class NboardImeService : InputMethodService() {
             refreshUi()
         }
 
+        bindPressAction(leftPunctuationButton) {
+            if (!isGboardLayoutActive()) {
+                return@bindPressAction
+            }
+            commitKeyText(resolveLeadingPunctuationLabel())
+        }
+
+        configureKeyTouch(
+            view = rightPunctuationButton,
+            repeatOnHold = false,
+            longPressAction = { anchor, rawX, rawY ->
+                if (!isGboardLayoutActive()) {
+                    return@configureKeyTouch
+                }
+                showVariantPopup(
+                    anchor = anchor,
+                    variants = VARIANT_MAP["."].orEmpty(),
+                    shiftAware = false,
+                    replacePreviousChar = false,
+                    touchRawX = rawX,
+                    touchRawY = rawY
+                )
+            },
+            tapOnDown = false
+        ) {
+            if (!isGboardLayoutActive()) {
+                return@configureKeyTouch
+            }
+            commitKeyText(".")
+        }
+
         configureKeyTouch(
             view = aiModeButton,
             repeatOnHold = false,
@@ -748,7 +825,7 @@ class NboardImeService : InputMethodService() {
             view = clipboardButton,
             repeatOnHold = false,
             longPressAction = { anchor, x, y ->
-                if (!isEmojiMode) {
+                if (!isEmojiMode && !isGboardLayoutActive()) {
                     showBottomModePopup(anchor, x, y, false)
                 }
             },
@@ -756,6 +833,10 @@ class NboardImeService : InputMethodService() {
         ) {
             if (isEmojiMode) {
                 toggleEmojiMode()
+                return@configureKeyTouch
+            }
+            if (isGboardLayoutActive()) {
+                commitKeyText(".")
                 return@configureKeyTouch
             }
             performBottomModeTap(rightBottomMode)
@@ -900,6 +981,7 @@ class NboardImeService : InputMethodService() {
         }
 
         refreshAutoShiftFromContext()
+        refreshGboardPunctuationLabels()
         setVisibleAnimated(aiQuickActionsRow, isAiMode)
         setVisibleAnimated(aiPromptRow, isAiMode)
         setVisibleAnimated(clipboardPanel, isClipboardOpen && !isEmojiMode)
@@ -908,8 +990,12 @@ class NboardImeService : InputMethodService() {
         setVisibleAnimated(predictionRow, shouldShowPredictionRow() && hasPredictionSuggestions)
         setVisibleAnimated(keyRowsContainer, !isClipboardOpen && (!isEmojiMode || isEmojiSearchMode))
 
-        setVisibleAnimated(modeSwitchButton, !isClipboardOpen)
-        setVisibleAnimated(aiModeButton, !isClipboardOpen)
+        val gboardLayout = isGboardLayoutActive()
+        setVisibleAnimated(modeSwitchButton, gboardLayout || !isClipboardOpen)
+        setVisibleAnimated(leftPunctuationButton, gboardLayout && !isClipboardOpen)
+        setVisibleAnimated(aiModeButton, gboardLayout || !isClipboardOpen)
+        setVisibleAnimated(rightPunctuationButton, gboardLayout && !isClipboardOpen)
+        setVisibleAnimated(clipboardButton, !gboardLayout)
         setVisibleAnimated(actionButton, true)
         applyBottomRowLayoutForClipboard(isClipboardOpen)
 
@@ -918,7 +1004,9 @@ class NboardImeService : InputMethodService() {
         emojiSuggestionsScroll.isVisible = isEmojiMode && isEmojiSearchMode
         emojiGridScroll.isVisible = isEmojiMode && !isEmojiSearchMode
 
-        if (isEmojiMode) {
+        if (gboardLayout) {
+            aiModeButton.alpha = if (isEmojiMode || isBottomModeSelected(leftBottomMode)) 1f else 0.84f
+        } else if (isEmojiMode) {
             aiModeButton.alpha = 1f
             clipboardButton.alpha = 1f
         } else {
@@ -930,7 +1018,9 @@ class NboardImeService : InputMethodService() {
         updateModeSelectionVisuals()
         if (isEmojiMode) {
             setIcon(aiModeButton, R.drawable.ic_search_lucide, R.color.ai_text)
-            setIcon(clipboardButton, R.drawable.ic_smile_lucide, R.color.key_text)
+            if (!gboardLayout) {
+                setIcon(clipboardButton, R.drawable.ic_smile_lucide, R.color.key_text)
+            }
         }
 
         if (isVoiceListening || isVoiceStopping) {
@@ -952,7 +1042,9 @@ class NboardImeService : InputMethodService() {
         }
 
         aiModeButton.isEnabled = !isGenerating && !(leftBottomMode == BottomKeyMode.AI && !aiAllowed)
-        clipboardButton.isEnabled = !isGenerating && !(rightBottomMode == BottomKeyMode.AI && !aiAllowed)
+        leftPunctuationButton.isEnabled = !isGenerating && gboardLayout
+        rightPunctuationButton.isEnabled = !isGenerating && gboardLayout
+        clipboardButton.isEnabled = !gboardLayout && !isGenerating && !(rightBottomMode == BottomKeyMode.AI && !aiAllowed)
         aiPromptToggleButton.isEnabled = aiAllowed && !isGenerating
         aiPromptInput.isEnabled = aiAllowed && !isGenerating
         aiSummarizeButton.isEnabled = aiAllowed && !isGenerating
@@ -963,6 +1055,17 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun applyBottomRowLayoutForClipboard(clipboardOpen: Boolean) {
+        if (isGboardLayoutActive()) {
+            updateBottomKeyLayout(modeSwitchButton, 1.18f, marginEndDp = 4)
+            updateBottomKeyLayout(aiModeButton, 1f, marginEndDp = 4)
+            updateBottomKeyLayout(leftPunctuationButton, 1f, marginEndDp = 4)
+            updateBottomKeyLayout(spaceButton, 4.41f, marginEndDp = 4)
+            updateBottomKeyLayout(rightPunctuationButton, 1f, marginEndDp = 4)
+            updateBottomKeyLayout(actionButton, 1.75f, marginEndDp = 0)
+            return
+        }
+        updateBottomKeyLayout(modeSwitchButton, 1.2f, marginEndDp = 4)
+        updateBottomKeyLayout(aiModeButton, 1f, marginEndDp = 4)
         updateBottomKeyLayout(spaceButton, if (clipboardOpen) 7.8f else 5f, marginEndDp = 4)
         updateBottomKeyLayout(clipboardButton, 1f, marginEndDp = 4)
         updateBottomKeyLayout(actionButton, if (clipboardOpen) 1.35f else 1.9f, marginEndDp = 0)
@@ -980,6 +1083,9 @@ class NboardImeService : InputMethodService() {
 
     private fun updateBottomModeIcons() {
         setIcon(aiModeButton, iconResForBottomMode(leftBottomMode), R.color.key_text)
+        if (isGboardLayoutActive()) {
+            return
+        }
         setIcon(clipboardButton, iconResForBottomMode(rightBottomMode), R.color.key_text)
     }
 
@@ -992,6 +1098,27 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun updateModeSelectionVisuals() {
+        if (isGboardLayoutActive()) {
+            val aiSelected = if (isEmojiMode) isEmojiSearchMode else isBottomModeSelected(leftBottomMode)
+            styleModeButton(
+                button = aiModeButton,
+                selected = aiSelected,
+                selectedBackgroundRes = if (leftBottomMode == BottomKeyMode.AI) {
+                    R.drawable.bg_mode_ai_selected
+                } else {
+                    R.drawable.bg_mode_special_selected
+                },
+                normalBackgroundRes = if (leftBottomMode == BottomKeyMode.AI) {
+                    R.drawable.bg_ai_button
+                } else {
+                    R.drawable.bg_special_key
+                }
+            )
+            leftPunctuationButton.background = uiDrawable(R.drawable.bg_key)
+            rightPunctuationButton.background = uiDrawable(R.drawable.bg_key)
+            return
+        }
+
         if (isEmojiMode) {
             styleModeButton(
                 button = aiModeButton,
@@ -1070,11 +1197,14 @@ class NboardImeService : InputMethodService() {
     private fun setGenerating(generating: Boolean) {
         isGenerating = generating
         val aiAllowed = isAiAllowedInCurrentContext()
+        val gboardLayout = isGboardLayoutActive()
         aiPromptInput.isEnabled = aiAllowed && !generating
         actionButton.isEnabled = !generating
         modeSwitchButton.isEnabled = !generating
+        leftPunctuationButton.isEnabled = !generating && gboardLayout
         aiModeButton.isEnabled = !generating && !(leftBottomMode == BottomKeyMode.AI && !aiAllowed)
-        clipboardButton.isEnabled = !generating && !(rightBottomMode == BottomKeyMode.AI && !aiAllowed)
+        rightPunctuationButton.isEnabled = !generating && gboardLayout
+        clipboardButton.isEnabled = !gboardLayout && !generating && !(rightBottomMode == BottomKeyMode.AI && !aiAllowed)
         aiPromptToggleButton.isEnabled = aiAllowed && !generating
         aiSummarizeButton.isEnabled = aiAllowed && !generating
         aiFixGrammarButton.isEnabled = aiAllowed && !generating
@@ -1624,6 +1754,36 @@ class NboardImeService : InputMethodService() {
         }
     }
 
+    private fun isQwertyLayoutActive(): Boolean = keyboardLayoutMode.isQwerty()
+
+    private fun isGboardLayoutActive(): Boolean = keyboardLayoutMode.isGboard()
+
+    private fun resolveLeadingPunctuationLabel(): String {
+        val info = currentInputEditorInfo ?: return ","
+        val inputType = info.inputType
+        val inputClass = inputType and InputType.TYPE_MASK_CLASS
+        val variation = inputType and InputType.TYPE_MASK_VARIATION
+        if (inputClass != InputType.TYPE_CLASS_TEXT) {
+            return ","
+        }
+        return when (variation) {
+            InputType.TYPE_TEXT_VARIATION_URI -> "/"
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS -> "@"
+            else -> ","
+        }
+    }
+
+    private fun refreshGboardPunctuationLabels() {
+        if (!::leftPunctuationButton.isInitialized || !::rightPunctuationButton.isInitialized) {
+            return
+        }
+        val leading = resolveLeadingPunctuationLabel()
+        leftPunctuationButton.text = leading
+        leftPunctuationButton.contentDescription = "Insert $leading"
+        rightPunctuationButton.text = "."
+    }
+
     private fun resolveContextualActionIcon(): Int {
         if (isEmojiSearchActive()) {
             return R.drawable.ic_search_lucide
@@ -1707,13 +1867,10 @@ class NboardImeService : InputMethodService() {
         val resolvedPrompt = if (selectedText.isBlank()) {
             prompt
         } else {
-            buildString {
-                append("Apply this instruction to the selected text and return only the transformed result.\n")
-                append("Instruction: ")
-                append(prompt)
-                append("\n\nSelected text:\n")
-                append(selectedText)
-            }
+            buildLanguagePreservingSelectionPrompt(
+                instruction = prompt,
+                selectedText = selectedText
+            )
         }
 
         if (!geminiClient.isConfigured) {
@@ -1777,9 +1934,18 @@ class NboardImeService : InputMethodService() {
         setGenerating(true)
         serviceScope.launch {
             val prompt = when (action) {
-                QuickAiAction.SUMMARIZE -> "Summarize this text:\n\n$sourceText"
-                QuickAiAction.FIX_GRAMMAR -> "Fix grammar and spelling while keeping meaning:\n\n$sourceText"
-                QuickAiAction.EXPAND -> "Expand this text with more detail but keep same meaning:\n\n$sourceText"
+                QuickAiAction.SUMMARIZE -> buildLanguagePreservingSelectionPrompt(
+                    instruction = "Summarize this text.",
+                    selectedText = sourceText
+                )
+                QuickAiAction.FIX_GRAMMAR -> buildLanguagePreservingSelectionPrompt(
+                    instruction = "Fix grammar and spelling while keeping the same meaning.",
+                    selectedText = sourceText
+                )
+                QuickAiAction.EXPAND -> buildLanguagePreservingSelectionPrompt(
+                    instruction = "Expand this text with more detail while keeping the same meaning.",
+                    selectedText = sourceText
+                )
             }
 
             val result = geminiClient.generateText(
@@ -1805,14 +1971,32 @@ class NboardImeService : InputMethodService() {
         }
     }
 
+    private fun buildLanguagePreservingSelectionPrompt(
+        instruction: String,
+        selectedText: String
+    ): String {
+        return buildString {
+            append("Apply this instruction to the selected text and return only the transformed result.\n")
+            append("Keep the output in the same language as the selected text.\n")
+            append("Do not translate unless the instruction explicitly asks for translation.\n")
+            append("Instruction: ")
+            append(instruction.trim())
+            append("\n\nSelected text:\n")
+            append(selectedText)
+        }
+    }
+
     private fun renderKeyRows() {
+        isNumberRowEnabled = KeyboardModeSettings.loadNumberRowEnabled(this)
         dismissActivePopup()
         activeSwipeTypingSession = null
         swipeLetterKeyByView.clear()
 
+        row0.removeAllViews()
         row1.removeAllViews()
         row2.removeAllViews()
         row3.removeAllViews()
+        row0.isVisible = false
 
         if (isNumbersMode) {
             if (isSymbolsSubmenuOpen) {
@@ -1868,26 +2052,43 @@ class NboardImeService : InputMethodService() {
             return
         }
 
-        val alphaRow1 = when (keyboardLayoutMode) {
-            KeyboardLayoutMode.AZERTY -> AZERTY_ROW_1
-            KeyboardLayoutMode.QWERTY -> QWERTY_ROW_1
+        val alphaRow1 = if (isQwertyLayoutActive()) QWERTY_ROW_1 else AZERTY_ROW_1
+        val alphaRow2 = when {
+            isGboardLayoutActive() && isQwertyLayoutActive() -> GBOARD_QWERTY_ROW_2
+            isQwertyLayoutActive() -> QWERTY_ROW_2
+            else -> AZERTY_ROW_2
         }
-        val alphaRow2 = when (keyboardLayoutMode) {
-            KeyboardLayoutMode.AZERTY -> AZERTY_ROW_2
-            KeyboardLayoutMode.QWERTY -> QWERTY_ROW_2
+        val alphaRow3 = when {
+            isGboardLayoutActive() && isQwertyLayoutActive() -> GBOARD_QWERTY_ROW_3
+            isGboardLayoutActive() -> GBOARD_AZERTY_ROW_3
+            isQwertyLayoutActive() -> QWERTY_ROW_3
+            else -> AZERTY_ROW_3
         }
-        val alphaRow3 = when (keyboardLayoutMode) {
-            KeyboardLayoutMode.AZERTY -> AZERTY_ROW_3
-            KeyboardLayoutMode.QWERTY -> QWERTY_ROW_3
-        }
-        val alphaRow3Weight = if (keyboardLayoutMode == KeyboardLayoutMode.QWERTY) 0.875f else 1f
+        val alphaRow3Weight = if (isQwertyLayoutActive()) 0.875f else 1f
 
-        val topNumberVariants = alphaRow1.mapIndexed { index, label ->
-            label to ((index + 1) % 10).toString()
-        }.toMap()
+        val topNumberVariants = if (isNumberRowEnabled) {
+            emptyMap()
+        } else {
+            alphaRow1.mapIndexed { index, label ->
+                label to ((index + 1) % 10).toString()
+            }.toMap()
+        }
 
+        if (isNumberRowEnabled) {
+            row0.isVisible = true
+            addTextKeys(row0, listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
+        }
+
+        row2.translationX = 0f
         addTextKeys(row1, alphaRow1, shiftAware = true, topNumberVariants = topNumberVariants)
-        addTextKeys(row2, alphaRow2, shiftAware = true)
+        if (isQwertyLayoutActive()) {
+            val insetPx = resolveQwertySecondRowInsetPx()
+            addRowInsetSpacer(row2, insetPx, addTrailingGap = true)
+            addTextKeys(row2, alphaRow2, shiftAware = true, includeEndSpacing = true)
+            addRowInsetSpacer(row2, insetPx, addTrailingGap = false)
+        } else {
+            addTextKeys(row2, alphaRow2, shiftAware = true)
+        }
 
         addSpecialKey(
             row = row3,
@@ -1949,10 +2150,16 @@ class NboardImeService : InputMethodService() {
             } else {
                 null
             }
+            val numberRowSettingEnabled = KeyboardModeSettings.loadNumberRowEnabled(this)
+            val forcedTopVariant = if (numberRowSettingEnabled) {
+                null
+            } else {
+                topNumberVariants[original.lowercase(Locale.US)]
+            }
             val longPress = buildVariantLongPressAction(
                 original = original,
                 shiftAware = shiftAware,
-                forcedVariant = topNumberVariants[original.lowercase(Locale.US)]
+                forcedVariant = forcedTopVariant
             )
             val keyTapOnDown = when {
                 longPress != null -> false
@@ -1985,6 +2192,37 @@ class NboardImeService : InputMethodService() {
         }
     }
 
+    private fun addRowInsetSpacer(row: LinearLayout, widthPx: Int, addTrailingGap: Boolean) {
+        if (widthPx <= 0) {
+            return
+        }
+        val spacer = View(this).apply {
+            isClickable = false
+            isFocusable = false
+            layoutParams = LinearLayout.LayoutParams(widthPx, dp(52)).also { params ->
+                if (addTrailingGap) {
+                    params.marginEnd = dp(4)
+                }
+            }
+        }
+        row.addView(spacer)
+    }
+
+    private fun resolveQwertySecondRowInsetPx(): Int {
+        val rowWidthPx = when {
+            ::row1.isInitialized && row1.width > 0 -> row1.width
+            ::keyboardRoot.isInitialized && keyboardRoot.width > 0 -> {
+                keyboardRoot.width - keyboardRoot.paddingStart - keyboardRoot.paddingEnd
+            }
+            else -> resources.displayMetrics.widthPixels - dp(16)
+        }.coerceAtLeast(dp(220))
+
+        val horizontalGapPx = dp(4)
+        val row1KeyWidth = ((rowWidthPx - (horizontalGapPx * 9)).toFloat() / 10f)
+            .coerceAtLeast(dp(22).toFloat())
+        return (row1KeyWidth / 2f).toInt()
+    }
+
     private fun buildVariantLongPressAction(
         original: String,
         shiftAware: Boolean,
@@ -1992,7 +2230,10 @@ class NboardImeService : InputMethodService() {
     ): ((View, Float, Float) -> Unit)? {
         val key = original.lowercase(Locale.US)
         val variants = linkedSetOf<String>()
-        forcedVariant?.let { variants.add(it) }
+        val allowForcedDigitVariant = !KeyboardModeSettings.loadNumberRowEnabled(this)
+        if (allowForcedDigitVariant) {
+            forcedVariant?.let { variants.add(it) }
+        }
         VARIANT_MAP[key]?.forEach { variants.add(it) }
         if (variants.isEmpty()) {
             return null
@@ -2215,7 +2456,15 @@ class NboardImeService : InputMethodService() {
     private fun showBottomModePopup(anchor: View, touchRawX: Float, touchRawY: Float, isLeftSlot: Boolean) {
         dismissActivePopup()
 
-        val modeOptions = if (isLeftSlot) leftBottomModeOptions else rightBottomModeOptions
+        if (isGboardLayoutActive() && !isLeftSlot) {
+            return
+        }
+
+        val modeOptions = when {
+            isGboardLayoutActive() -> listOf(BottomKeyMode.AI, BottomKeyMode.CLIPBOARD, BottomKeyMode.EMOJI)
+            isLeftSlot -> leftBottomModeOptions
+            else -> rightBottomModeOptions
+        }
         val options = modeOptions.map { mode ->
             ModeOption(mode, iconResForBottomMode(mode))
         }
@@ -2231,7 +2480,7 @@ class NboardImeService : InputMethodService() {
         val optionEnabled = mutableListOf<Boolean>()
 
         options.forEach { option ->
-            val isSelected = if (isLeftSlot) {
+            val isSelected = if (isGboardLayoutActive() || isLeftSlot) {
                 leftBottomMode == option.mode
             } else {
                 rightBottomMode == option.mode
@@ -2250,7 +2499,7 @@ class NboardImeService : InputMethodService() {
                 }
             }
             val action: () -> Unit = {
-                if (isLeftSlot) {
+                if (isGboardLayoutActive() || isLeftSlot) {
                     leftBottomMode = option.mode
                     if (leftBottomMode != BottomKeyMode.AI) {
                         isAiMode = false
@@ -2259,7 +2508,12 @@ class NboardImeService : InputMethodService() {
                     rightBottomMode = option.mode
                 }
 
-                if (leftBottomMode != BottomKeyMode.CLIPBOARD && rightBottomMode != BottomKeyMode.CLIPBOARD) {
+                val clipboardModeAvailable = if (isGboardLayoutActive()) {
+                    leftBottomMode == BottomKeyMode.CLIPBOARD
+                } else {
+                    leftBottomMode == BottomKeyMode.CLIPBOARD || rightBottomMode == BottomKeyMode.CLIPBOARD
+                }
+                if (!clipboardModeAvailable) {
                     isClipboardOpen = false
                 }
 
@@ -2357,6 +2611,9 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun hasEmojiSlot(): Boolean {
+        if (isGboardLayoutActive()) {
+            return true
+        }
         return leftBottomMode == BottomKeyMode.EMOJI || rightBottomMode == BottomKeyMode.EMOJI
     }
 
@@ -6131,10 +6388,12 @@ class NboardImeService : InputMethodService() {
             "https://api-inference.huggingface.co/models/allenai/t5-small-next-word-generator-qoogle"
 
         private const val AI_PROMPT_SYSTEM_INSTRUCTION =
-            "You are a concise writing assistant. Reply only with the final text. Keep responses short and practical."
+            "You are a concise writing assistant. Reply only with the final text. Keep responses short and practical. " +
+                "When transforming user text, preserve the original language and do not translate unless the user explicitly asks."
 
         private const val AI_QUICK_ACTION_SYSTEM_INSTRUCTION =
-            "You are a concise text-rewrite assistant. Return only the rewritten output without explanation. Keep it brief."
+            "You are a concise text-rewrite assistant. Return only the rewritten output without explanation. Keep it brief. " +
+                "Preserve the original language of the provided text and do not translate unless explicitly requested."
 
         private val DEFAULT_TOP_EMOJIS = listOf("😀", "😂", "❤️", "🔥", "😭", "👍", "🥳", "✨")
         private val EMOJI_SCAN_RANGES = listOf(
@@ -6148,10 +6407,13 @@ class NboardImeService : InputMethodService() {
         private val AZERTY_ROW_1 = listOf("a", "z", "e", "r", "t", "y", "u", "i", "o", "p")
         private val AZERTY_ROW_2 = listOf("q", "s", "d", "f", "g", "h", "j", "k", "l", "m")
         private val AZERTY_ROW_3 = listOf("w", "x", "c", "v", "b", "n", ",")
+        private val GBOARD_AZERTY_ROW_3 = listOf("w", "x", "c", "v", "b", "n", "'")
 
         private val QWERTY_ROW_1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
-        private val QWERTY_ROW_2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l", "'")
-        private val QWERTY_ROW_3 = listOf("z", "x", "c", "v", "b", "n", "m", ",")
+        private val QWERTY_ROW_2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
+        private val QWERTY_ROW_3 = listOf("z", "x", "c", "v", "b", "n", "m", ",", "'")
+        private val GBOARD_QWERTY_ROW_2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
+        private val GBOARD_QWERTY_ROW_3 = listOf("z", "x", "c", "v", "b", "n", "m", "'")
 
         private val VARIANT_MAP = mapOf(
             "a" to listOf("à", "â", "ä", "æ", "á", "ã", "å"),
@@ -6164,7 +6426,7 @@ class NboardImeService : InputMethodService() {
             "y" to listOf("ÿ", "ý"),
             "'" to listOf("’", "ʼ", "`", "´"),
             "\"" to listOf("«", "»", "“", "”"),
-            "." to listOf("…", "•", "·"),
+            "." to listOf("!", "?", ";", "…", "•", "·"),
             "," to listOf(".", ";", ":", "…", "!", "?", "'"),
             "-" to listOf("-", "–", "—", "•")
         )

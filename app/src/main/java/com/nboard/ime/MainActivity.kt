@@ -23,12 +23,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var languageValue: TextView
     private lateinit var keyboardValue: TextView
+    private lateinit var numberRowSettingValue: TextView
     private lateinit var wordPredictionValue: TextView
     private lateinit var swipeTypingValue: TextView
     private lateinit var swipeTrailValue: TextView
     private lateinit var voiceInputValue: TextView
     private lateinit var swipeTrailRow: View
     private lateinit var swipeTrailDivider: View
+    private lateinit var leftKeyModesRow: View
+    private lateinit var rightKeyModesRow: View
     private lateinit var leftKeyModesValue: TextView
     private lateinit var rightKeyModesValue: TextView
     private lateinit var themeValue: TextView
@@ -42,12 +45,15 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         languageValue = findViewById(R.id.languageValue)
         keyboardValue = findViewById(R.id.keyboardValue)
+        numberRowSettingValue = findViewById(R.id.numberRowSettingValue)
         wordPredictionValue = findViewById(R.id.wordPredictionValue)
         swipeTypingValue = findViewById(R.id.swipeTypingValue)
         swipeTrailValue = findViewById(R.id.swipeTrailValue)
         voiceInputValue = findViewById(R.id.voiceInputValue)
         swipeTrailRow = findViewById(R.id.swipeTrailRow)
         swipeTrailDivider = findViewById(R.id.swipeTrailDivider)
+        leftKeyModesRow = findViewById(R.id.leftKeyModesRow)
+        rightKeyModesRow = findViewById(R.id.rightKeyModesRow)
         leftKeyModesValue = findViewById(R.id.leftKeyModesValue)
         rightKeyModesValue = findViewById(R.id.rightKeyModesValue)
         themeValue = findViewById(R.id.themeValue)
@@ -90,6 +96,10 @@ class MainActivity : AppCompatActivity() {
             showKeyboardLayoutDialog()
         }
 
+        findViewById<View>(R.id.numberRowSettingRow).setOnClickListener {
+            showNumberRowDialog()
+        }
+
         findViewById<View>(R.id.languageRow).setOnClickListener {
             showLanguageDialog()
         }
@@ -114,11 +124,19 @@ class MainActivity : AppCompatActivity() {
             showVoiceInputDialog()
         }
 
-        findViewById<View>(R.id.leftKeyModesRow).setOnClickListener {
+        leftKeyModesRow.setOnClickListener {
+            if (KeyboardModeSettings.loadLayoutMode(this).isGboard()) {
+                Toast.makeText(this, "Tool slots are managed by Gboard layout", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             showBottomKeyOptionsDialog(isLeftSlot = true)
         }
 
-        findViewById<View>(R.id.rightKeyModesRow).setOnClickListener {
+        rightKeyModesRow.setOnClickListener {
+            if (KeyboardModeSettings.loadLayoutMode(this).isGboard()) {
+                Toast.makeText(this, "Tool slots are managed by Gboard layout", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             showBottomKeyOptionsDialog(isLeftSlot = false)
         }
 
@@ -145,13 +163,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun showKeyboardLayoutDialog() {
         val current = KeyboardModeSettings.loadLayoutMode(this)
-        val options = arrayOf("AZERTY", "QWERTY")
-        val selected = if (current == KeyboardLayoutMode.QWERTY) 1 else 0
+        val options = arrayOf("AZERTY", "QWERTY", "Gboard AZERTY", "Gboard QWERTY")
+        val selected = when (current) {
+            KeyboardLayoutMode.AZERTY -> 0
+            KeyboardLayoutMode.QWERTY -> 1
+            KeyboardLayoutMode.GBOARD_AZERTY -> 2
+            KeyboardLayoutMode.GBOARD_QWERTY -> 3
+        }
 
         AlertDialog.Builder(this)
             .setTitle("Keyboard layout")
             .setSingleChoiceItems(options, selected) { dialog, which ->
-                val mode = if (which == 1) KeyboardLayoutMode.QWERTY else KeyboardLayoutMode.AZERTY
+                val mode = when (which) {
+                    1 -> KeyboardLayoutMode.QWERTY
+                    2 -> KeyboardLayoutMode.GBOARD_AZERTY
+                    3 -> KeyboardLayoutMode.GBOARD_QWERTY
+                    else -> KeyboardLayoutMode.AZERTY
+                }
                 KeyboardModeSettings.saveLayoutMode(this, mode)
                 refreshValues()
                 dialog.dismiss()
@@ -278,6 +306,22 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showNumberRowDialog() {
+        val enabled = KeyboardModeSettings.loadNumberRowEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Number row")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveNumberRowEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showSwipeTypingDialog() {
         val enabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
         val options = arrayOf("Enabled", "Disabled")
@@ -352,6 +396,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshValues() {
+        val layoutMode = KeyboardModeSettings.loadLayoutMode(this)
+        val isGboardLayout = layoutMode.isGboard()
         statusText.text = maskApiKeyForDisplay(KeyboardModeSettings.loadGeminiApiKey(this))
         languageValue.text = when (KeyboardModeSettings.loadLanguageMode(this)) {
             KeyboardLanguageMode.FRENCH -> "French"
@@ -359,9 +405,16 @@ class MainActivity : AppCompatActivity() {
             KeyboardLanguageMode.BOTH -> "French + English"
             KeyboardLanguageMode.DISABLED -> "Disabled"
         }
-        keyboardValue.text = when (KeyboardModeSettings.loadLayoutMode(this)) {
+        keyboardValue.text = when (layoutMode) {
             KeyboardLayoutMode.AZERTY -> "AZERTY"
             KeyboardLayoutMode.QWERTY -> "QWERTY"
+            KeyboardLayoutMode.GBOARD_AZERTY -> "Gboard AZERTY"
+            KeyboardLayoutMode.GBOARD_QWERTY -> "Gboard QWERTY"
+        }
+        numberRowSettingValue.text = if (KeyboardModeSettings.loadNumberRowEnabled(this)) {
+            "Enabled"
+        } else {
+            "Disabled"
         }
         wordPredictionValue.text = if (KeyboardModeSettings.loadWordPredictionEnabled(this)) {
             "Enabled"
@@ -387,8 +440,20 @@ class MainActivity : AppCompatActivity() {
             "Disabled"
         }
         val (leftOptions, rightOptions) = KeyboardModeSettings.loadBottomSlotOptions(this)
-        leftKeyModesValue.text = formatBottomModePairLabel(leftOptions[0], leftOptions[1])
-        rightKeyModesValue.text = formatBottomModePairLabel(rightOptions[0], rightOptions[1])
+        leftKeyModesValue.text = if (isGboardLayout) {
+            "Single key (hold AI for AI/Clipboard/Emoji)"
+        } else {
+            formatBottomModePairLabel(leftOptions[0], leftOptions[1])
+        }
+        rightKeyModesValue.text = if (isGboardLayout) {
+            "Disabled in Gboard layout"
+        } else {
+            formatBottomModePairLabel(rightOptions[0], rightOptions[1])
+        }
+        leftKeyModesRow.isEnabled = !isGboardLayout
+        rightKeyModesRow.isEnabled = !isGboardLayout
+        leftKeyModesRow.alpha = if (isGboardLayout) 0.5f else 1f
+        rightKeyModesRow.alpha = if (isGboardLayout) 0.5f else 1f
         themeValue.text = when (KeyboardModeSettings.loadThemeMode(this)) {
             AppThemeMode.SYSTEM -> "System"
             AppThemeMode.LIGHT -> "Light"

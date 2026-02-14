@@ -10,7 +10,17 @@ enum class BottomKeyMode(val value: String) {
 
 enum class KeyboardLayoutMode(val value: String) {
     AZERTY("azerty"),
-    QWERTY("qwerty")
+    QWERTY("qwerty"),
+    GBOARD_AZERTY("gboard_azerty"),
+    GBOARD_QWERTY("gboard_qwerty");
+
+    fun isQwerty(): Boolean {
+        return this == QWERTY || this == GBOARD_QWERTY
+    }
+
+    fun isGboard(): Boolean {
+        return this == GBOARD_AZERTY || this == GBOARD_QWERTY
+    }
 }
 
 enum class KeyboardLanguageMode(val value: String) {
@@ -49,6 +59,7 @@ object KeyboardModeSettings {
     private const val KEY_SWIPE_TYPING_ENABLED = "swipe_typing_enabled"
     private const val KEY_SWIPE_TRAIL_ENABLED = "swipe_trail_enabled"
     private const val KEY_VOICE_INPUT_ENABLED = "voice_input_enabled"
+    private const val KEY_NUMBER_ROW_ENABLED = "number_row_enabled"
     private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     fun load(context: Context): Pair<BottomKeyMode, BottomKeyMode> {
@@ -124,7 +135,12 @@ object KeyboardModeSettings {
     fun loadLayoutMode(context: Context): KeyboardLayoutMode {
         val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_LAYOUT_MODE, KeyboardLayoutMode.AZERTY.value)
-        return if (raw == KeyboardLayoutMode.QWERTY.value) KeyboardLayoutMode.QWERTY else KeyboardLayoutMode.AZERTY
+        return when (raw) {
+            KeyboardLayoutMode.QWERTY.value -> KeyboardLayoutMode.QWERTY
+            KeyboardLayoutMode.GBOARD_AZERTY.value -> KeyboardLayoutMode.GBOARD_AZERTY
+            KeyboardLayoutMode.GBOARD_QWERTY.value -> KeyboardLayoutMode.GBOARD_QWERTY
+            else -> KeyboardLayoutMode.AZERTY
+        }
     }
 
     fun saveLayoutMode(context: Context, mode: KeyboardLayoutMode) {
@@ -230,6 +246,11 @@ object KeyboardModeSettings {
             .getBoolean(KEY_VOICE_INPUT_ENABLED, true)
     }
 
+    fun loadNumberRowEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NUMBER_ROW_ENABLED, false)
+    }
+
     fun loadSwipeTrailEnabled(context: Context): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_SWIPE_TRAIL_ENABLED, true)
@@ -246,6 +267,13 @@ object KeyboardModeSettings {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_VOICE_INPUT_ENABLED, enabled)
+            .apply()
+    }
+
+    fun saveNumberRowEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_NUMBER_ROW_ENABLED, enabled)
             .apply()
     }
 
