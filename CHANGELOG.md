@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.0] - 2026-02-14
+
+### Added
+
+- Added Gboard-style AZERTY and QWERTY layouts.
+- Added Gboard punctuation keys (`','`, `'.'`, and `'`) with variants for `!`, `?`, and `;`.
+- Added adaptive left punctuation key in Gboard layouts (`/` for URL fields, `@` for email fields).
+- Added a settings toggle for the top number row.
+
+### Changed
+
+- Changed Gboard bottom-row proportions: narrower spacebar and balanced punctuation/tool key sizing.
+- Changed Gboard tool access to a single key with hold menu for AI, Clipboard, and Emoji actions.
+- Changed AI text transformation prompts to preserve the selected text language by default.
+
 ## [1.1.0] - 2026-02-13
 
 ### Added

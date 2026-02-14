@@ -1,6 +1,6 @@
 # Nboard
 
-![Version](https://img.shields.io/badge/version-1.1.0-yellow)
+![Version](https://img.shields.io/badge/version-1.2.0-yellow)
 ![Android](https://img.shields.io/badge/android-8.0%2B%20(API%2026)-grey)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)
 
@@ -28,7 +28,7 @@ Built for Nothing Phone users who wanted a keyboard matching their device's mini
 
 ## Project Status
 
-Nboard is **feature-complete** and in maintenance mode after v1.1.0.
+Nboard is **feature-complete** and in maintenance mode after v1.2.0.
 
 I built this keyboard to solve my own problem: wanting a Nothing-inspired keyboard with AI tools. It works great, and I use it daily.
 
@@ -48,19 +48,22 @@ If you want additional features, fork it! It's open source (AGPL-3.0) for exactl
 
 ## Features
 
-- AZERTY and QWERTY layouts
+- AZERTY and QWERTY layouts with classic and Gboard variants
 - Smart shift behavior (auto-capitalize, one-shot shift, caps lock)
 - Local autocorrect (French / English / Both / Disabled)
-- Long-press variants for letters and punctuation
+- Long-press variants for letters and punctuation (`!`, `?`, `;`, accents)
+- Gboard punctuation row improvements (`','`, `'.'`, and `'`) with adaptive left punctuation key (`/` in URL fields, `@` in email fields)
+- Optional number row toggle in settings
 - Spacebar cursor swipe
 - Haptics and press animations
 - Clipboard history with pin/delete + recent chip for text/images
 - Emoji browser + search mode
-- AI tools (Summarize, Fix Grammar, Expand, free prompt with selected-text context support)
+- AI tools (Summarize, Fix Grammar, Expand, free prompt with selected-text context support, language preserved by default)
 - Contextual action icon based on input field type
 - Theme options: `System`, `Light`, `Dark`, `Dark (Classic)`
 - Font options: `Inter` / `Roboto`
-- Configurable side mode keys (AI / Clipboard / Emoji)
+- Configurable side mode keys (AI / Clipboard / Emoji) on classic layouts
+- Gboard tool key behavior with press-and-hold quick access for AI / Clipboard / Emoji
 
 ## Beta Features
 
@@ -83,7 +86,7 @@ If you want to support Nboard development:
 3. Install on device:
 
 ```bash
-adb install -r path/to/NBoard-v1.1.0-release.apk
+adb install -r path/to/NBoard-v1.2.0-release.apk
 ```
 
 4. On Android, enable **Nboard** in keyboard settings.
