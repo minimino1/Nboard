@@ -20,6 +20,8 @@
   <a href="#build-locally">Build Locally</a>
   ·
   <a href="#features">Features</a>
+  ·
+  <a href="#contributing--feedback">Contributing</a>
 </p>
 
 ## About
@@ -70,6 +72,7 @@ If you want additional features, fork it! It's open source (AGPL-3.0) for exactl
 
 - Swipe Typing *(experimental)*
 - Voice recognition (hold send) *(experimental)*
+- Word prediction *(experimental)*
 
 These features are currently in beta and may have occasional issues.
 
@@ -195,14 +198,12 @@ You can also set/update the key directly from the app settings.
 
 - Password autofill (AutofillManager integration)
 - GIF search
-- Additional AI quick actions
-- Additional language support
-- Further swipe typing improvements
 
 ## Contributing & Feedback
 
+- Contribution guidelines: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- For bug fixes and feature PRs, read the scope and acceptance rules before starting work.
 - Bug reports: [GitHub Issues](https://github.com/MathieuDvv/Nboard/issues)
-- Feature requests/discussion: [GitHub Discussions](https://github.com/MathieuDvv/Nboard/discussions)
 - Feedback from real typing usage is very useful and helps prioritize improvements.
 
 ## Troubleshooting
