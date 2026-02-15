@@ -74,4 +74,51 @@ class AutoCorrectTest {
         assertNull(engine.correct("", "je"))
         assertNull(engine.correct("a", "je"))
     }
+
+    @Test
+    fun setModeFromKeyboardMode_updatesCorrectionLanguage() {
+        val engine = createEngine(AutoCorrect.AutoCorrectMode.BILINGUAL)
+
+        engine.setModeFromKeyboardMode(KeyboardLanguageMode.FRENCH)
+        assertNull(engine.correct("helo", null))
+        assertEquals("merci", engine.correct("mersi", null))
+
+        engine.setModeFromKeyboardMode(KeyboardLanguageMode.ENGLISH)
+        assertEquals("hello", engine.correct("helo", null))
+        assertNull(engine.correct("mersi", null))
+
+        engine.setModeFromKeyboardMode(KeyboardLanguageMode.DISABLED)
+        assertEquals("merci", engine.correct("mersi", "je"))
+    }
+
+    @Test
+    fun typographicApostrophe_isNormalized() {
+        val engine = createEngine(AutoCorrect.AutoCorrectMode.BILINGUAL)
+        assertNull(engine.correct("aujourd’hui", "je"))
+    }
+
+    @Test
+    fun bilingualWithoutLanguageHint_prefersHigherFrequencyCandidate() {
+        val engine = AutoCorrect(
+            frenchFrequencies = mapOf("able" to 10_000),
+            englishFrequencies = mapOf("apple" to 5_000),
+            mode = AutoCorrect.AutoCorrectMode.BILINGUAL
+        )
+
+        assertEquals("able", engine.correct("aple", null))
+    }
+
+    @Test
+    fun sameFrequencyCandidates_useLexicographicTieBreak() {
+        val engine = AutoCorrect(
+            frenchFrequencies = emptyMap(),
+            englishFrequencies = mapOf(
+                "heap" to 100,
+                "heat" to 100
+            ),
+            mode = AutoCorrect.AutoCorrectMode.ENGLISH_ONLY
+        )
+
+        assertEquals("heap", engine.correct("hea", null))
+    }
 }

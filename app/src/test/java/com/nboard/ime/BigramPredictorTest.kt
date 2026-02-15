@@ -1,6 +1,7 @@
 package com.nboard.ime
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BigramPredictorTest {
@@ -89,5 +90,68 @@ class BigramPredictorTest {
         val predictor = createPredictor(BigramPredictor.PredictionMode.BILINGUAL)
         assertEquals(listOf("want", "will", "would"), predictor.predictWords("w", "I"))
         assertEquals(listOf("vais", "veux", "voudrais"), predictor.predictWords("v", "je"))
+    }
+
+    @Test
+    fun setModeFromKeyboardMode_updatesPredictionLanguage() {
+        val predictor = createPredictor(BigramPredictor.PredictionMode.BILINGUAL)
+
+        predictor.setModeFromKeyboardMode(KeyboardLanguageMode.FRENCH)
+        assertEquals(emptyList<String>(), predictor.predictWords("w", "I"))
+
+        predictor.setModeFromKeyboardMode(KeyboardLanguageMode.ENGLISH)
+        assertEquals(listOf("want", "will", "would"), predictor.predictWords("w", "I"))
+
+        predictor.setModeFromKeyboardMode(KeyboardLanguageMode.DISABLED)
+        assertEquals(listOf("vais", "veux", "voudrais"), predictor.predictWords("v", "je"))
+    }
+
+    @Test
+    fun normalization_handlesUppercaseAndCurlyApostrophe() {
+        val predictor = BigramPredictor(
+            frenchUnigrams = emptyMap(),
+            englishUnigrams = mapOf(
+                "we're" to 100L,
+                "well" to 90L,
+                "west" to 80L
+            ),
+            frenchBigrams = emptyMap(),
+            englishBigrams = emptyMap(),
+            mode = BigramPredictor.PredictionMode.ENGLISH_ONLY
+        )
+
+        assertEquals(listOf("we're"), predictor.predictWords("WE’", null))
+    }
+
+    @Test
+    fun longPrefix_returnsNoPredictions() {
+        val predictor = createPredictor(BigramPredictor.PredictionMode.ENGLISH_ONLY)
+        assertEquals(emptyList<String>(), predictor.predictWords("a".repeat(25), null))
+    }
+
+    @Test
+    fun exactPrefix_isFilteredOutFromResults() {
+        val predictor = createPredictor(BigramPredictor.PredictionMode.ENGLISH_ONLY)
+        val predictions = predictor.predictWords("we", null)
+        assertTrue(predictions.isEmpty())
+    }
+
+    @Test
+    fun bilingualWithoutHint_mergesByFrequencyAcrossLanguages() {
+        val predictor = BigramPredictor(
+            frenchUnigrams = mapOf(
+                "alors" to 30L,
+                "aller" to 20L
+            ),
+            englishUnigrams = mapOf(
+                "alpha" to 10L,
+                "also" to 8L
+            ),
+            frenchBigrams = emptyMap(),
+            englishBigrams = emptyMap(),
+            mode = BigramPredictor.PredictionMode.BILINGUAL
+        )
+
+        assertEquals(listOf("alors", "aller", "alpha"), predictor.predictWords("a", "unknown"))
     }
 }

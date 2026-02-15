@@ -14,10 +14,21 @@ class SmartTypingBehaviorTest {
     }
 
     @Test
+    fun autoSpaceAndCapitalize_disabledForNonTextInputClasses() {
+        val number = SmartTypingBehavior(InputType.TYPE_CLASS_NUMBER)
+        val phone = SmartTypingBehavior(InputType.TYPE_CLASS_PHONE)
+
+        assertFalse(number.shouldAutoSpaceAndCapitalize())
+        assertFalse(phone.shouldAutoSpaceAndCapitalize())
+    }
+
+    @Test
     fun autoSpaceAndCapitalize_disabledForSpecialFields() {
         val email = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
         val url = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val webEdit = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT)
+        val webEmail =
+            SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
         val password = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val visiblePassword =
             SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
@@ -28,6 +39,7 @@ class SmartTypingBehaviorTest {
         assertFalse(email.shouldAutoSpaceAndCapitalize())
         assertFalse(url.shouldAutoSpaceAndCapitalize())
         assertFalse(webEdit.shouldAutoSpaceAndCapitalize())
+        assertFalse(webEmail.shouldAutoSpaceAndCapitalize())
         assertFalse(password.shouldAutoSpaceAndCapitalize())
         assertFalse(visiblePassword.shouldAutoSpaceAndCapitalize())
         assertFalse(numberPassword.shouldAutoSpaceAndCapitalize())
@@ -93,9 +105,21 @@ class SmartTypingBehaviorTest {
         val textBehavior = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL)
         val numberBehavior = SmartTypingBehavior(InputType.TYPE_CLASS_NUMBER)
         val phoneBehavior = SmartTypingBehavior(InputType.TYPE_CLASS_PHONE)
+        val datetimeBehavior = SmartTypingBehavior(InputType.TYPE_CLASS_DATETIME)
 
         assertTrue(textBehavior.shouldReturnToLettersAfterNumberSpace())
         assertFalse(numberBehavior.shouldReturnToLettersAfterNumberSpace())
         assertFalse(phoneBehavior.shouldReturnToLettersAfterNumberSpace())
+        assertFalse(datetimeBehavior.shouldReturnToLettersAfterNumberSpace())
+    }
+
+    @Test
+    fun autoCapitalizeAfterChar_respectsFieldTypeAndPunctuation() {
+        val normal = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL)
+        val email = SmartTypingBehavior(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+
+        assertTrue(normal.shouldAutoCapitalizeAfterChar('!'))
+        assertFalse(normal.shouldAutoCapitalizeAfterChar(','))
+        assertFalse(email.shouldAutoCapitalizeAfterChar('!'))
     }
 }
