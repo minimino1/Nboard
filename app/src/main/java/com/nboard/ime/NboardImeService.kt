@@ -75,15 +75,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 class NboardImeService : InputMethodService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -212,10 +207,6 @@ class NboardImeService : InputMethodService() {
     private var latestClipboardDismissed = false
     private var recentClipboardExpiryJob: Job? = null
     private var hasPredictionSuggestions = false
-    private var remotePredictionCenter: String? = null
-    private var remotePredictionRequestKey: String? = null
-    private var remotePredictionJob: Job? = null
-    private val remotePredictionCache = LinkedHashMap<String, String>(REMOTE_PREDICTION_CACHE_SIZE, 0.75f, true)
     private val swipeLetterKeyByView = LinkedHashMap<View, String>()
     private var activeSwipeTypingSession: SwipeTypingSession? = null
     private var isVoiceListening = false
@@ -229,15 +220,6 @@ class NboardImeService : InputMethodService() {
     private var activeEditorPackage: String? = null
     private var smartTypingBehavior = SmartTypingBehavior(0)
     private var pendingAutoInsertedSentenceSpace = false
-
-    private val remotePredictionHttpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(REMOTE_PREDICTION_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .readTimeout(REMOTE_PREDICTION_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .writeTimeout(REMOTE_PREDICTION_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .callTimeout(REMOTE_PREDICTION_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .build()
-    }
 
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         captureClipboardPrimary()
@@ -287,7 +269,6 @@ class NboardImeService : InputMethodService() {
         destroyVoiceRecognizer()
         savePredictionLearning(force = true)
         recentClipboardExpiryJob?.cancel()
-        remotePredictionJob?.cancel()
         clipboardManager?.removePrimaryClipChangedListener(clipboardListener)
         serviceScope.cancel()
         super.onDestroy()
@@ -380,9 +361,6 @@ class NboardImeService : InputMethodService() {
         pendingAutoCorrection = null
         activeSwipeTypingSession = null
         hasPredictionSuggestions = false
-        remotePredictionCenter = null
-        remotePredictionRequestKey = null
-        remotePredictionJob?.cancel()
         pendingAutoInsertedSentenceSpace = false
         if (::emojiSearchInput.isInitialized) {
             emojiSearchInput.text?.clear()
@@ -2981,7 +2959,6 @@ class NboardImeService : InputMethodService() {
         }
         if (!shouldShowPredictionRow()) {
             setPredictionWords(emptyList())
-            remotePredictionJob?.cancel()
             return
         }
 
@@ -2998,7 +2975,6 @@ class NboardImeService : InputMethodService() {
         val normalizedFragment = normalizeWord(fragment)
         val contextLanguage = detectContextLanguage(sentenceContext.ifBlank { beforeCursor })
         val previousWord = extractPreviousWordForPrediction(sentenceContext, fragment)
-        maybeRequestRemotePrediction(sentenceContext, fragment)
 
         val bigramPredictions = if (::bigramPredictor.isInitialized) {
             bigramPredictor.predictWords(
@@ -3019,12 +2995,7 @@ class NboardImeService : InputMethodService() {
             )
         )
 
-        val mergedPredictions = mergeRemotePredictionCandidates(
-            localPredictions,
-            fragment = fragment
-        )
-
-        val predictions = mergedPredictions
+        val predictions = localPredictions
             .map { candidate ->
                 if (fragment.isBlank()) {
                     if (isAutoShiftEnabled) {
@@ -3041,156 +3012,6 @@ class NboardImeService : InputMethodService() {
             .take(MAX_PREDICTION_CANDIDATES)
 
         setPredictionWords(predictions)
-    }
-
-    private fun maybeRequestRemotePrediction(sentenceContext: String, fragment: String) {
-        if (fragment.isNotBlank()) {
-            remotePredictionCenter = null
-            remotePredictionRequestKey = null
-            remotePredictionJob?.cancel()
-            return
-        }
-
-        val prompt = buildRemotePredictionPrompt(sentenceContext) ?: run {
-            remotePredictionCenter = null
-            remotePredictionRequestKey = null
-            remotePredictionJob?.cancel()
-            return
-        }
-
-        if (remotePredictionRequestKey == prompt) {
-            return
-        }
-
-        remotePredictionRequestKey = prompt
-        remotePredictionCenter = remotePredictionCache[prompt]
-        if (!remotePredictionCenter.isNullOrBlank()) {
-            return
-        }
-
-        remotePredictionJob?.cancel()
-        remotePredictionJob = serviceScope.launch {
-            delay(REMOTE_PREDICTION_DEBOUNCE_MS)
-            val predicted = withContext(Dispatchers.IO) {
-                requestRemoteQooglePrediction(prompt)
-            } ?: return@launch
-
-            if (remotePredictionRequestKey != prompt) {
-                return@launch
-            }
-            remotePredictionCenter = predicted
-            remotePredictionCache[prompt] = predicted
-            while (remotePredictionCache.size > REMOTE_PREDICTION_CACHE_SIZE) {
-                val oldest = remotePredictionCache.keys.firstOrNull() ?: break
-                remotePredictionCache.remove(oldest)
-            }
-            if (::predictionRow.isInitialized) {
-                renderPredictionRow()
-                setVisibleAnimated(predictionRow, shouldShowPredictionRow() && hasPredictionSuggestions)
-            }
-        }
-    }
-
-    private fun buildRemotePredictionPrompt(sentenceContext: String): String? {
-        val context = sentenceContext.trim()
-        if (context.isBlank()) {
-            return null
-        }
-        val tokens = extractPredictionTokens(context).takeLast(REMOTE_PREDICTION_TOKEN_WINDOW)
-        if (tokens.isEmpty()) {
-            return null
-        }
-        return tokens.joinToString(separator = " ")
-    }
-
-    private fun requestRemoteQooglePrediction(prompt: String): String? {
-        return try {
-            val payload = JSONObject().apply {
-                put("inputs", prompt)
-                put("options", JSONObject().put("wait_for_model", false))
-            }.toString()
-
-            val request = Request.Builder()
-                .url(HF_QOOGLE_MODEL_ENDPOINT)
-                .header("Accept", "application/json")
-                .post(payload.toRequestBody(JSON_MEDIA_TYPE))
-                .build()
-
-            remotePredictionHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return null
-                }
-                parseRemotePredictionWord(body, prompt)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun parseRemotePredictionWord(body: String, prompt: String): String? {
-        if (body.isBlank()) {
-            return null
-        }
-        return runCatching {
-            val trimmed = body.trim()
-            val rawOutput = when {
-                trimmed.startsWith("[") -> {
-                    val array = JSONArray(trimmed)
-                    if (array.length() == 0) {
-                        return null
-                    }
-                    when (val first = array.opt(0)) {
-                        is JSONObject -> first.optString("generated_text")
-                        is String -> first
-                        else -> null
-                    }
-                }
-                trimmed.startsWith("{") -> {
-                    val obj = JSONObject(trimmed)
-                    if (obj.has("error")) {
-                        null
-                    } else {
-                        obj.optString("generated_text")
-                    }
-                }
-                else -> trimmed
-            }
-            sanitizeRemotePredictionWord(rawOutput, prompt)
-        }.getOrNull()
-    }
-
-    private fun sanitizeRemotePredictionWord(rawOutput: String?, prompt: String): String? {
-        if (rawOutput.isNullOrBlank()) {
-            return null
-        }
-        var candidateText = rawOutput.trim()
-        if (candidateText.startsWith(prompt, ignoreCase = true)) {
-            candidateText = candidateText.substring(prompt.length).trim()
-        }
-        if (candidateText.isBlank()) {
-            return null
-        }
-        val match = WORD_TOKEN_REGEX.find(candidateText) ?: return null
-        val normalized = normalizeWord(match.value).trim('\'', '’')
-        return if (normalized.length >= 2) normalized else null
-    }
-
-    private fun mergeRemotePredictionCandidates(localCandidates: List<String>, fragment: String): List<String> {
-        val merged = localCandidates.toMutableList()
-        val remote = remotePredictionCenter?.takeIf { it.isNotBlank() }
-        if (!remote.isNullOrBlank()) {
-            val accepted = if (fragment.isBlank()) {
-                localCandidates.isEmpty() || localCandidates.any { it.equals(remote, ignoreCase = true) }
-            } else {
-                foldWord(remote).startsWith(foldWord(fragment))
-            }
-            if (accepted) {
-                merged.removeAll { it.equals(remote, ignoreCase = true) }
-                merged.add(0, remote)
-            }
-        }
-        return merged.take(MAX_PREDICTION_CANDIDATES)
     }
 
     private fun mergePrimaryPredictionCandidates(primary: List<String>, fallback: List<String>): List<String> {
@@ -6444,13 +6265,6 @@ class NboardImeService : InputMethodService() {
         private const val MAX_WORD_PREDICTIONS = 3
         private const val MAX_PREDICTION_CANDIDATES = 3
         private const val WORD_PREDICTION_SCAN_LIMIT = 2200
-        private const val REMOTE_PREDICTION_DEBOUNCE_MS = 120L
-        private const val REMOTE_PREDICTION_CONNECT_TIMEOUT_MS = 900L
-        private const val REMOTE_PREDICTION_READ_TIMEOUT_MS = 1200L
-        private const val REMOTE_PREDICTION_WRITE_TIMEOUT_MS = 900L
-        private const val REMOTE_PREDICTION_CALL_TIMEOUT_MS = 1600L
-        private const val REMOTE_PREDICTION_CACHE_SIZE = 200
-        private const val REMOTE_PREDICTION_TOKEN_WINDOW = 10
         private const val MAX_PREDICTION_UNIGRAM_BOOST = 140
         private const val MAX_PREDICTION_BIGRAM_BOOST = 220
         private const val MAX_PREDICTION_TRIGRAM_BOOST = 260
@@ -6503,8 +6317,6 @@ class NboardImeService : InputMethodService() {
         private const val KEY_LEARNED_WORD_COUNTS_JSON = "learned_word_counts"
         private const val KEY_LEARNED_BIGRAM_COUNTS_JSON = "learned_bigram_counts"
         private const val KEY_LEARNED_TRIGRAM_COUNTS_JSON = "learned_trigram_counts"
-        private const val HF_QOOGLE_MODEL_ENDPOINT =
-            "https://api-inference.huggingface.co/models/allenai/t5-small-next-word-generator-qoogle"
 
         private const val AI_PROMPT_SYSTEM_INSTRUCTION =
             "You are a concise writing assistant. Reply only with the final text. Keep responses short and practical. " +
@@ -6557,7 +6369,6 @@ class NboardImeService : InputMethodService() {
         private val ASSET_WORD_REGEX = Regex("[a-zàâäéèêëîïôöùûüçœæÿ'\\-]{2,24}")
         private val WORD_TOKEN_REGEX = Regex("[\\p{L}][\\p{L}'’\\-]*")
         private val WHITESPACE_REGEX = Regex("\\s+")
-        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private val ENGLISH_WORDS = setOf(
             "a","about","after","again","all","also","always","am","an","and","any","are","around","as","at",
