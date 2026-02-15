@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.0] - 2026-02-15
+
+### Added
+
+- Added Smart Typing assists: auto-space after sentence punctuation, auto-capitalize for the next letter, and auto-return from number layout to letters after `number + space`.
+- Added stricter context-aware typing behavior gates using `EditorInfo.inputType` to disable assists in email, URL, password, username, number-only, and phone fields.
+- Added upgraded local typing intelligence with stronger dictionary and n-gram (bigram/trigram) handling for prediction and autocorrect quality.
+- Added a root developer architecture guide for contributors.
+
+### Changed
+
+- Refactored the IME implementation into focused modules (`NboardImeTextInput`, `NboardImeBottomModes`, `NboardImeAutoCorrection`, `NboardImeVoice`, `NboardImeClipboard`, `NboardImeEmojiPrediction`, etc.) instead of a large monolith.
+- Reworked local autocorrect and prediction flow to improve readability, maintainability, and future extension points while keeping behavior on-device.
+- Expanded automated test coverage across smart typing, autocorrect, prediction, trie logic, and layout mode behavior.
+
 ## [1.2.0] - 2026-02-14
 
 ### Added

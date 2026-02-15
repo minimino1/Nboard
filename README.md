@@ -1,6 +1,6 @@
 # Nboard
 
-![Version](https://img.shields.io/badge/version-1.2.0-yellow)
+![Version](https://img.shields.io/badge/version-1.3.0-yellow)
 ![Android](https://img.shields.io/badge/android-8.0%2B%20(API%2026)-grey)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)
 
@@ -28,7 +28,7 @@ Built for Nothing Phone users who wanted a keyboard matching their device's mini
 
 ## Project Status
 
-Nboard is **feature-complete** and in maintenance mode after v1.2.0.
+Nboard is **feature-complete** and in maintenance mode after v1.3.0.
 
 I built this keyboard to solve my own problem: wanting a Nothing-inspired keyboard with AI tools. It works great, and I use it daily.
 
@@ -50,7 +50,8 @@ If you want additional features, fork it! It's open source (AGPL-3.0) for exactl
 
 - AZERTY and QWERTY layouts with classic and Gboard variants
 - Smart shift behavior (auto-capitalize, one-shot shift, caps lock)
-- Local autocorrect (French / English / Both / Disabled)
+- Smart typing assists (auto-space after sentence punctuation, auto-capitalize after punctuation, return to letters after `number + space`)
+- Local autocorrect + prediction (French / English / Both / Disabled) with dictionary + n-gram scoring and on-device learning
 - Long-press variants for letters and punctuation (`!`, `?`, `;`, accents)
 - Gboard punctuation row improvements (`','`, `'.'`, and `'`) with adaptive left punctuation key (`/` in URL fields, `@` in email fields)
 - Optional number row toggle in settings
@@ -67,7 +68,6 @@ If you want additional features, fork it! It's open source (AGPL-3.0) for exactl
 
 ## Beta Features
 
-- Word Prediction *(experimental)*
 - Swipe Typing *(experimental)*
 - Voice recognition (hold send) *(experimental)*
 
@@ -120,7 +120,7 @@ If you want to support Nboard development:
 3. Install on device:
 
 ```bash
-adb install -r path/to/NBoard-v1.2.0-release.apk
+adb install -r path/to/NBoard-v1.3.0-release.apk
 ```
 
 4. On Android, enable **Nboard** in keyboard settings.
@@ -156,13 +156,20 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Project Structure
 
-- `app/src/main/java/com/nboard/ime/NboardImeService.kt` — keyboard engine and UI behavior
+- `app/src/main/java/com/nboard/ime/NboardImeService.kt` — IME lifecycle + composition root
+- `app/src/main/java/com/nboard/ime/NboardImeTextInput.kt` — key commit/delete pipeline, shift logic, smart typing integration
+- `app/src/main/java/com/nboard/ime/NboardImeAutoCorrection.kt` — dictionary/variant correction flow
+- `app/src/main/java/com/nboard/ime/NboardImeEmojiPrediction.kt` — emoji + prediction row rendering
+- `app/src/main/java/com/nboard/ime/NboardImeBottomModes.kt` — bottom mode state and UI transitions
+- `app/src/main/java/com/nboard/ime/NboardImeVoice.kt` — voice capture and transcript commit flow
+- `app/src/main/java/com/nboard/ime/NboardImeClipboard.kt` — clipboard UI/history interactions
+- `app/src/main/java/com/nboard/ime/AutoCorrect.kt` and `app/src/main/java/com/nboard/ime/BigramPredictor.kt` — local typing intelligence engines
 - `app/src/main/java/com/nboard/ime/MainActivity.kt` — settings app
 - `app/src/main/java/com/nboard/ime/OnboardingActivity.kt` — onboarding flow
-- `app/src/main/java/com/nboard/ime/KeyboardModeSettings.kt` — persisted preferences
-- `app/src/main/java/com/nboard/ime/ai/GeminiClient.kt` — Gemini API client
-- `app/src/main/java/com/nboard/ime/clipboard/ClipboardHistoryStore.kt` — clipboard persistence
-- `app/src/main/res/layout/keyboard_view.xml` — keyboard layout
+
+## Developer Guide
+
+Architecture and contributor onboarding are documented in [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md).
 
 ## AI Key Setup (Optional)
 
