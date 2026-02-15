@@ -73,6 +73,40 @@ If you want additional features, fork it! It's open source (AGPL-3.0) for exactl
 
 These features are currently in beta and may have occasional issues.
 
+## How Autocorrect and Prediction Work
+
+### Autocorrect (local, on-device)
+
+- Nboard loads French and English frequency dictionaries from local assets.
+- When a typed word is unknown, it generates close candidates (1 edit away): deletion, swap, replacement, insertion.
+- It ranks candidates by frequency first, then keeps the closest/shortest match.
+- In bilingual mode, the previous word gives a lightweight language hint (French or English) to prioritize suggestions.
+- A trie + in-memory cache are used to keep lookup speed fast while typing.
+
+### Word prediction (local, on-device)
+
+- Nboard uses unigram frequencies (single-word popularity) and bigram frequencies (next-word pairs).
+- If there is a previous word, bigram candidates are preferred.
+- If there is no strong previous-word match, it falls back to top unigram matches.
+- In bilingual mode, French and English candidates are merged with simple frequency-based ranking.
+- The prediction bar returns up to 3 suggestions.
+
+## Language Support and APK Size
+
+Nboard currently focuses on **French** and **English**.
+
+- **French** is first-class because I am French, the app is used by French users, and it supports **AZERTY** workflows.
+- **English** is included because it is the most widely used language and improves everyday compatibility.
+
+The app is bigger now mainly because of new local dictionary assets used by autocorrect and prediction:
+
+- `app/src/main/assets/dictionaries/english_50k.txt`
+- `app/src/main/assets/dictionaries/french_50k.txt`
+- `app/src/main/assets/dictionaries/english_bigrams.txt`
+- `app/src/main/assets/dictionaries/french_bigrams.txt`
+
+These files increase APK size, but they keep correction/prediction fast and on-device (no network call required for core typing intelligence).
+
 ## Support Development
 
 If you want to support Nboard development:

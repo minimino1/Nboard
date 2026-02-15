@@ -188,6 +188,8 @@ class NboardImeService : InputMethodService() {
     private var englishLexicon = Lexicon.empty()
     @Volatile
     private var frenchLexicon = Lexicon.empty()
+    private lateinit var autoCorrectEngine: AutoCorrect
+    private lateinit var bigramPredictor: BigramPredictor
 
     private var activePopupWindow: PopupWindow? = null
     private var activeVariantSession: VariantSelectionSession? = null
@@ -241,6 +243,14 @@ class NboardImeService : InputMethodService() {
         keyboardUiContext = this
         clipboardHistoryStore = ClipboardHistoryStore(this)
         reloadTypingSettings()
+        autoCorrectEngine = AutoCorrect(this)
+        autoCorrectEngine.setModeFromKeyboardMode(keyboardLanguageMode)
+        bigramPredictor = BigramPredictor(this)
+        bigramPredictor.setModeFromKeyboardMode(keyboardLanguageMode)
+        serviceScope.launch(Dispatchers.Default) {
+            autoCorrectEngine.preload()
+            bigramPredictor.preload()
+        }
 
         reloadBottomModesFromSettings()
 
@@ -378,6 +388,12 @@ class NboardImeService : InputMethodService() {
         appThemeMode = KeyboardModeSettings.loadThemeMode(this)
         keyboardLayoutMode = KeyboardModeSettings.loadLayoutMode(this)
         keyboardLanguageMode = KeyboardModeSettings.loadLanguageMode(this)
+        if (::autoCorrectEngine.isInitialized) {
+            autoCorrectEngine.setModeFromKeyboardMode(keyboardLanguageMode)
+        }
+        if (::bigramPredictor.isInitialized) {
+            bigramPredictor.setModeFromKeyboardMode(keyboardLanguageMode)
+        }
         keyboardFontMode = KeyboardModeSettings.loadFontMode(this)
         wordPredictionEnabled = KeyboardModeSettings.loadWordPredictionEnabled(this)
         swipeTypingEnabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
@@ -2968,13 +2984,27 @@ class NboardImeService : InputMethodService() {
         val previousWord = extractPreviousWordForPrediction(sentenceContext, fragment)
         maybeRequestRemotePrediction(sentenceContext, fragment)
 
-        val mergedPredictions = mergeRemotePredictionCandidates(
-            buildWordPredictions(
+        val bigramPredictions = if (::bigramPredictor.isInitialized) {
+            bigramPredictor.predictWords(
+                currentInput = normalizedFragment,
+                previousWord = previousWord
+            )
+        } else {
+            emptyList()
+        }
+
+        val localPredictions = mergePrimaryPredictionCandidates(
+            primary = bigramPredictions,
+            fallback = buildWordPredictions(
                 prefix = normalizedFragment,
                 previousWord = previousWord,
                 contextLanguage = contextLanguage,
                 sentenceContext = sentenceContext
-            ),
+            )
+        )
+
+        val mergedPredictions = mergeRemotePredictionCandidates(
+            localPredictions,
             fragment = fragment
         )
 
@@ -3145,6 +3175,24 @@ class NboardImeService : InputMethodService() {
             }
         }
         return merged.take(MAX_PREDICTION_CANDIDATES)
+    }
+
+    private fun mergePrimaryPredictionCandidates(primary: List<String>, fallback: List<String>): List<String> {
+        if (primary.isEmpty()) {
+            return fallback.take(MAX_PREDICTION_CANDIDATES)
+        }
+        val merged = ArrayList<String>(MAX_PREDICTION_CANDIDATES)
+        primary.forEach { candidate ->
+            if (merged.size < MAX_PREDICTION_CANDIDATES && merged.none { it.equals(candidate, ignoreCase = true) }) {
+                merged.add(candidate)
+            }
+        }
+        fallback.forEach { candidate ->
+            if (merged.size < MAX_PREDICTION_CANDIDATES && merged.none { it.equals(candidate, ignoreCase = true) }) {
+                merged.add(candidate)
+            }
+        }
+        return merged
     }
 
     private fun setPredictionWords(words: List<String>) {
@@ -4877,52 +4925,29 @@ class NboardImeService : InputMethodService() {
             return null
         }
 
-        if (isKnownWord(normalizedSource)) {
+        autoCorrectEngine.setModeFromKeyboardMode(keyboardLanguageMode)
+        val previousWord = extractPreviousWordForAutoCorrection(beforeCursor, sourceWord)
+        val startNanos = SystemClock.elapsedRealtimeNanos()
+        val suggestion = autoCorrectEngine.correct(normalizedSource, previousWord) ?: return null
+        val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startNanos) / 1_000_000L
+        if (elapsedMs > AUTOCORRECT_SLOW_LOG_THRESHOLD_MS) {
+            Log.w(TAG, "Autocorrect took ${elapsedMs}ms for '$normalizedSource'")
+        }
+        if (isCorrectionSuppressed(normalizedSource, suggestion)) {
             return null
         }
 
-        val contextLanguage = detectContextLanguage(beforeCursor)
-
-        // Apply explicit typo overrides first for high-confidence mistakes.
-        var directFix: String? = null
-        var directFixScore = Int.MAX_VALUE
-        listOf(
-            KeyboardLanguageMode.FRENCH to FRENCH_TYPOS,
-            KeyboardLanguageMode.ENGLISH to ENGLISH_TYPOS
-        ).forEach { (language, typoMap) ->
-            if (!isLanguageEnabled(language)) {
-                return@forEach
-            }
-            val candidate = typoMap[normalizedSource] ?: return@forEach
-            val normalizedCandidate = normalizeWord(candidate)
-            if (isCorrectionSuppressed(normalizedSource, normalizedCandidate)) {
-                return@forEach
-            }
-            val score = languageBiasPenalty(language, contextLanguage)
-            if (score < directFixScore) {
-                directFixScore = score
-                directFix = candidate
-            }
-        }
-
-        directFix?.let { value ->
-            val correctedWord = applyWordCase(value, sourceWord)
-            if (!correctedWord.equals(sourceWord, ignoreCase = true)) {
-                inputConnection.deleteSurroundingText(sourceWord.length, 0)
-                inputConnection.commitText(correctedWord, 1)
-                return AutoCorrectionResult(sourceWord, correctedWord)
-            }
-        }
-
-        val rawBest = findBestDictionaryCorrection(normalizedSource, contextLanguage) ?: return null
-        val correctedWord = applyWordCase(rawBest, sourceWord)
+        val correctedWord = applyWordCase(suggestion, sourceWord)
         if (correctedWord.equals(sourceWord, ignoreCase = true)) {
             return null
         }
 
         inputConnection.deleteSurroundingText(sourceWord.length, 0)
         inputConnection.commitText(correctedWord, 1)
-        return AutoCorrectionResult(sourceWord, correctedWord)
+        return AutoCorrectionResult(
+            originalWord = sourceWord,
+            correctedWord = correctedWord
+        )
     }
 
     private fun findBestDictionaryCorrection(
@@ -5801,6 +5826,17 @@ class NboardImeService : InputMethodService() {
         return value.substring(start + 1, end + 1)
     }
 
+    private fun extractPreviousWordForAutoCorrection(beforeCursor: String, sourceWord: String): String? {
+        if (beforeCursor.isBlank() || sourceWord.isBlank()) {
+            return null
+        }
+        if (beforeCursor.length < sourceWord.length) {
+            return null
+        }
+        val withoutCurrent = beforeCursor.dropLast(sourceWord.length)
+        return extractTrailingWord(withoutCurrent)
+    }
+
     private fun extractCurrentWordFragment(value: String): String {
         if (value.isBlank()) {
             return ""
@@ -6321,6 +6357,7 @@ class NboardImeService : InputMethodService() {
         private const val SHIFT_DOUBLE_TAP_TIMEOUT_MS = 320L
         private const val AUTO_SHIFT_CONTEXT_WINDOW = 80
         private const val AUTOCORRECT_CONTEXT_WINDOW = 40
+        private const val AUTOCORRECT_SLOW_LOG_THRESHOLD_MS = 50L
         private const val PREDICTION_CONTEXT_WINDOW = 280
         private const val MAX_WORD_PREDICTIONS = 3
         private const val MAX_PREDICTION_CANDIDATES = 3
