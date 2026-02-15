@@ -173,6 +173,9 @@ class NboardImeService : InputMethodService() {
     private var swipeTrailEnabled = true
     private var voiceInputEnabled = true
     private var isNumberRowEnabled = false
+    private var autoSpaceAfterPunctuationEnabled = true
+    private var autoCapitalizeAfterPunctuationEnabled = true
+    private var returnToLettersAfterNumberSpaceEnabled = true
 
     private val emojiUsageCounts = mutableMapOf<String, Int>()
     private val emojiRecents = ArrayDeque<String>()
@@ -224,6 +227,8 @@ class NboardImeService : InputMethodService() {
     private var voiceReleaseStopJob: Job? = null
     private var voiceFinalizeFallbackJob: Job? = null
     private var activeEditorPackage: String? = null
+    private var smartTypingBehavior = SmartTypingBehavior(0)
+    private var pendingAutoInsertedSentenceSpace = false
 
     private val remotePredictionHttpClient by lazy {
         OkHttpClient.Builder()
@@ -317,6 +322,8 @@ class NboardImeService : InputMethodService() {
         manualShiftMode = ShiftMode.OFF
         isAutoShiftEnabled = true
         lastShiftTapAtMs = 0L
+        updateSmartTypingBehavior(editorInfo)
+        pendingAutoInsertedSentenceSpace = false
         isGenerating = false
         stopAiProcessingAnimations()
         stopVoiceInput(forceCancel = true)
@@ -332,6 +339,7 @@ class NboardImeService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        updateSmartTypingBehavior(info)
         reloadTypingSettings()
         reloadBottomModesFromSettings()
         keyboardUiContext = createKeyboardUiContext()
@@ -375,6 +383,7 @@ class NboardImeService : InputMethodService() {
         remotePredictionCenter = null
         remotePredictionRequestKey = null
         remotePredictionJob?.cancel()
+        pendingAutoInsertedSentenceSpace = false
         if (::emojiSearchInput.isInitialized) {
             emojiSearchInput.text?.clear()
         }
@@ -382,6 +391,10 @@ class NboardImeService : InputMethodService() {
             aiPromptInput.text?.clear()
         }
         clearInlinePromptFocus()
+    }
+
+    private fun updateSmartTypingBehavior(editorInfo: EditorInfo?) {
+        smartTypingBehavior = SmartTypingBehavior(editorInfo)
     }
 
     private fun reloadTypingSettings() {
@@ -400,6 +413,9 @@ class NboardImeService : InputMethodService() {
         swipeTrailEnabled = KeyboardModeSettings.loadSwipeTrailEnabled(this)
         voiceInputEnabled = KeyboardModeSettings.loadVoiceInputEnabled(this)
         isNumberRowEnabled = KeyboardModeSettings.loadNumberRowEnabled(this)
+        autoSpaceAfterPunctuationEnabled = KeyboardModeSettings.loadAutoSpaceAfterPunctuationEnabled(this)
+        autoCapitalizeAfterPunctuationEnabled = KeyboardModeSettings.loadAutoCapitalizeAfterPunctuationEnabled(this)
+        returnToLettersAfterNumberSpaceEnabled = KeyboardModeSettings.loadReturnToLettersAfterNumberSpaceEnabled(this)
         interTypeface = when (keyboardFontMode) {
             KeyboardFontMode.INTER -> ResourcesCompat.getFont(this, R.font.inter_variable)
             KeyboardFontMode.ROBOTO -> Typeface.create("sans-serif", Typeface.NORMAL)
@@ -3730,6 +3746,10 @@ class NboardImeService : InputMethodService() {
             isAutoShiftEnabled = false
             return
         }
+        if (!autoCapitalizeAfterPunctuationEnabled || !smartTypingBehavior.shouldAutoSpaceAndCapitalize()) {
+            isAutoShiftEnabled = false
+            return
+        }
 
         val textBeforeCursor = currentInputConnection
             ?.getTextBeforeCursor(AUTO_SHIFT_CONTEXT_WINDOW, 0)
@@ -3737,10 +3757,27 @@ class NboardImeService : InputMethodService() {
             .orEmpty()
 
         val trimmed = textBeforeCursor.trimEnd()
-        isAutoShiftEnabled = when {
-            trimmed.isEmpty() -> true
-            else -> AUTO_SHIFT_SENTENCE_ENDERS.contains(trimmed.last())
+        if (trimmed.isEmpty()) {
+            isAutoShiftEnabled = true
+            return
         }
+        val lastChar = trimmed.last()
+        if (lastChar == '\n') {
+            isAutoShiftEnabled = true
+            return
+        }
+        val previousChar = trimmed.getOrNull(trimmed.lastIndex - 1)
+        val last2Chars = if (trimmed.length >= 3) {
+            trimmed.substring(trimmed.length - 3, trimmed.length - 1)
+        } else {
+            null
+        }
+        isAutoShiftEnabled = smartTypingBehavior.shouldAutoSpaceAfterChar(
+            char = lastChar,
+            previousChar = previousChar,
+            last2Chars = last2Chars,
+            nextChar = null
+        )
     }
 
     private fun refreshAutoShiftFromContextAndRerender(forceRerender: Boolean = false) {
@@ -3918,7 +3955,22 @@ class NboardImeService : InputMethodService() {
         } else if (isEmojiSearchInputActive()) {
             appendEmojiSearchText(" ")
         } else {
+            val inputConnection = currentInputConnection
+            val charBeforeSpace = inputConnection
+                ?.getTextBeforeCursor(1, 0)
+                ?.toString()
+                ?.lastOrNull()
             commitKeyText(" ")
+            if (isNumbersMode &&
+                charBeforeSpace?.isDigit() == true &&
+                returnToLettersAfterNumberSpaceEnabled &&
+                smartTypingBehavior.shouldReturnToLettersAfterNumberSpace()
+            ) {
+                isNumbersMode = false
+                isSymbolsSubmenuOpen = false
+                renderKeyRows()
+                refreshUi()
+            }
         }
     }
 
@@ -4667,6 +4719,7 @@ class NboardImeService : InputMethodService() {
     }
 
     private fun deleteOneCharacter() {
+        pendingAutoInsertedSentenceSpace = false
         if (isAiPromptInputActive()) {
             val editable = aiPromptInput.text
             val start = aiPromptInput.selectionStart
@@ -4752,6 +4805,28 @@ class NboardImeService : InputMethodService() {
         }
 
         val inputConnection = currentInputConnection ?: return
+        val committedChar = text.singleOrNull()
+        if (committedChar != null &&
+            committedChar in SMART_TYPING_SENTENCE_ENDERS &&
+            pendingAutoInsertedSentenceSpace
+        ) {
+            val beforeCursor = inputConnection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+            val hasSelection = !inputConnection.getSelectedText(0).isNullOrEmpty()
+            if (!hasSelection &&
+                beforeCursor.length >= 2 &&
+                beforeCursor.last() == ' ' &&
+                beforeCursor[beforeCursor.lastIndex - 1] in SMART_TYPING_SENTENCE_ENDERS
+            ) {
+                inputConnection.deleteSurroundingText(1, 0)
+            }
+        }
+        pendingAutoInsertedSentenceSpace = false
+
+        val beforeCursorText = inputConnection.getTextBeforeCursor(3, 0)?.toString().orEmpty()
+        val previousChar = beforeCursorText.lastOrNull()
+        val last2Chars = beforeCursorText.takeLast(2).takeIf { it.length == 2 }
+        val nextChar = inputConnection.getTextAfterCursor(1, 0)?.toString()?.firstOrNull()
+        val hasSelection = !inputConnection.getSelectedText(0).isNullOrEmpty()
         var autoCorrection: AutoCorrectionResult? = null
         if (text.length == 1 && AUTOCORRECT_TRIGGER_DELIMITERS.contains(text[0])) {
             autoCorrection = applyAutoCorrectionBeforeDelimiter(inputConnection)
@@ -4759,12 +4834,19 @@ class NboardImeService : InputMethodService() {
 
         inputConnection.commitText(text, 1)
         var committedSuffix = text
-        if (text.length == 1 && AUTO_SPACE_PUNCTUATION.contains(text[0])) {
-            val beforeCursor = inputConnection.getTextBeforeCursor(1, 0)?.toString().orEmpty()
-            if (!beforeCursor.endsWith(" ")) {
-                inputConnection.commitText(" ", 1)
-                committedSuffix += " "
-            }
+        if (committedChar != null &&
+            !hasSelection &&
+            autoSpaceAfterPunctuationEnabled &&
+            smartTypingBehavior.shouldAutoSpaceAfterChar(
+                char = committedChar,
+                previousChar = previousChar,
+                last2Chars = last2Chars,
+                nextChar = nextChar
+            )
+        ) {
+            inputConnection.commitText(" ", 1)
+            committedSuffix += " "
+            pendingAutoInsertedSentenceSpace = true
         }
         pendingAutoCorrection = if (autoCorrection != null) {
             AutoCorrectionUndo(
@@ -6468,8 +6550,7 @@ class NboardImeService : InputMethodService() {
             "-" to listOf("-", "–", "—", "•")
         )
 
-        private val AUTO_SPACE_PUNCTUATION = setOf('.', '!', '?', ':', ';')
-        private val AUTO_SHIFT_SENTENCE_ENDERS = setOf('.', '!', '?', ':', ';', '\n')
+        private val SMART_TYPING_SENTENCE_ENDERS = setOf('.', '!', '?')
         private val AUTOCORRECT_TRIGGER_DELIMITERS = setOf(' ', '.', ',', '!', '?', ';', ':', '\n')
         private val VOWELS_FOR_REPEAT = setOf('a', 'e', 'i', 'o', 'u', 'y')
         private val DIACRITIC_REGEX = Regex("\\p{M}+")

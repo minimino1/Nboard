@@ -24,6 +24,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var languageValue: TextView
     private lateinit var keyboardValue: TextView
     private lateinit var numberRowSettingValue: TextView
+    private lateinit var autoSpaceAfterPunctuationValue: TextView
+    private lateinit var autoCapitalizeAfterPunctuationValue: TextView
+    private lateinit var returnToLettersAfterNumberSpaceValue: TextView
     private lateinit var wordPredictionValue: TextView
     private lateinit var swipeTypingValue: TextView
     private lateinit var swipeTrailValue: TextView
@@ -46,6 +49,9 @@ class MainActivity : AppCompatActivity() {
         languageValue = findViewById(R.id.languageValue)
         keyboardValue = findViewById(R.id.keyboardValue)
         numberRowSettingValue = findViewById(R.id.numberRowSettingValue)
+        autoSpaceAfterPunctuationValue = findViewById(R.id.autoSpaceAfterPunctuationValue)
+        autoCapitalizeAfterPunctuationValue = findViewById(R.id.autoCapitalizeAfterPunctuationValue)
+        returnToLettersAfterNumberSpaceValue = findViewById(R.id.returnToLettersAfterNumberSpaceValue)
         wordPredictionValue = findViewById(R.id.wordPredictionValue)
         swipeTypingValue = findViewById(R.id.swipeTypingValue)
         swipeTrailValue = findViewById(R.id.swipeTrailValue)
@@ -98,6 +104,18 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.numberRowSettingRow).setOnClickListener {
             showNumberRowDialog()
+        }
+
+        findViewById<View>(R.id.autoSpaceAfterPunctuationRow).setOnClickListener {
+            showAutoSpaceAfterPunctuationDialog()
+        }
+
+        findViewById<View>(R.id.autoCapitalizeAfterPunctuationRow).setOnClickListener {
+            showAutoCapitalizeAfterPunctuationDialog()
+        }
+
+        findViewById<View>(R.id.returnToLettersAfterNumberSpaceRow).setOnClickListener {
+            showReturnToLettersAfterNumberSpaceDialog()
         }
 
         findViewById<View>(R.id.languageRow).setOnClickListener {
@@ -322,6 +340,54 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showAutoSpaceAfterPunctuationDialog() {
+        val enabled = KeyboardModeSettings.loadAutoSpaceAfterPunctuationEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Auto-space after punctuation")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveAutoSpaceAfterPunctuationEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showAutoCapitalizeAfterPunctuationDialog() {
+        val enabled = KeyboardModeSettings.loadAutoCapitalizeAfterPunctuationEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Auto-capitalize after punctuation")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveAutoCapitalizeAfterPunctuationEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showReturnToLettersAfterNumberSpaceDialog() {
+        val enabled = KeyboardModeSettings.loadReturnToLettersAfterNumberSpaceEnabled(this)
+        val options = arrayOf("Enabled", "Disabled")
+        val selected = if (enabled) 0 else 1
+
+        AlertDialog.Builder(this)
+            .setTitle("Return to letters after numbers")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                KeyboardModeSettings.saveReturnToLettersAfterNumberSpaceEnabled(this, which == 0)
+                refreshValues()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showSwipeTypingDialog() {
         val enabled = KeyboardModeSettings.loadSwipeTypingEnabled(this)
         val options = arrayOf("Enabled", "Disabled")
@@ -416,6 +482,23 @@ class MainActivity : AppCompatActivity() {
         } else {
             "Disabled"
         }
+        autoSpaceAfterPunctuationValue.text = if (KeyboardModeSettings.loadAutoSpaceAfterPunctuationEnabled(this)) {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+        autoCapitalizeAfterPunctuationValue.text =
+            if (KeyboardModeSettings.loadAutoCapitalizeAfterPunctuationEnabled(this)) {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
+        returnToLettersAfterNumberSpaceValue.text =
+            if (KeyboardModeSettings.loadReturnToLettersAfterNumberSpaceEnabled(this)) {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
         wordPredictionValue.text = if (KeyboardModeSettings.loadWordPredictionEnabled(this)) {
             "Enabled"
         } else {

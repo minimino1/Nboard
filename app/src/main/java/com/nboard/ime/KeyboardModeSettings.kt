@@ -60,6 +60,10 @@ object KeyboardModeSettings {
     private const val KEY_SWIPE_TRAIL_ENABLED = "swipe_trail_enabled"
     private const val KEY_VOICE_INPUT_ENABLED = "voice_input_enabled"
     private const val KEY_NUMBER_ROW_ENABLED = "number_row_enabled"
+    private const val KEY_AUTO_SPACE_AFTER_PUNCTUATION_ENABLED = "auto_space_after_punctuation_enabled"
+    private const val KEY_AUTO_CAPITALIZE_AFTER_PUNCTUATION_ENABLED = "auto_capitalize_after_punctuation_enabled"
+    private const val KEY_RETURN_TO_LETTERS_AFTER_NUMBER_SPACE_ENABLED =
+        "return_to_letters_after_number_space_enabled"
     private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     fun load(context: Context): Pair<BottomKeyMode, BottomKeyMode> {
@@ -254,6 +258,42 @@ object KeyboardModeSettings {
     fun loadSwipeTrailEnabled(context: Context): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_SWIPE_TRAIL_ENABLED, true)
+    }
+
+    fun loadAutoSpaceAfterPunctuationEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_SPACE_AFTER_PUNCTUATION_ENABLED, true)
+    }
+
+    fun saveAutoSpaceAfterPunctuationEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUTO_SPACE_AFTER_PUNCTUATION_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadAutoCapitalizeAfterPunctuationEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_CAPITALIZE_AFTER_PUNCTUATION_ENABLED, true)
+    }
+
+    fun saveAutoCapitalizeAfterPunctuationEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUTO_CAPITALIZE_AFTER_PUNCTUATION_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadReturnToLettersAfterNumberSpaceEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_RETURN_TO_LETTERS_AFTER_NUMBER_SPACE_ENABLED, true)
+    }
+
+    fun saveReturnToLettersAfterNumberSpaceEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_RETURN_TO_LETTERS_AFTER_NUMBER_SPACE_ENABLED, enabled)
+            .apply()
     }
 
     fun saveSwipeTrailEnabled(context: Context, enabled: Boolean) {
