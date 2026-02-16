@@ -1,6 +1,7 @@
 # Nboard
 
-![Version](https://img.shields.io/badge/version-1.3.0-yellow)
+![Version](https://img.shields.io/badge/version-1.4.0-yellow)
+![Version](https://img.shields.io/badge/version-1.3.0-green)
 ![Android](https://img.shields.io/badge/android-8.0%2B%20(API%2026)-grey)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)
 
