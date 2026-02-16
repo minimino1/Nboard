@@ -38,6 +38,19 @@ I'll fix critical bugs, but I'm not committing to major new features. The projec
 
 If you want additional features, fork it! It's open source (AGPL-3.0) for exactly this reason.
 
+### Dev Note (Branch Direction)
+
+The project currently has two release tracks:
+
+- `v1.3.0` = legacy/stable line (this `main` branch baseline)
+- `v1.4.0` = new layout-system line (started as `v1.4.0-beta`, now continuing as `v1.4.0+`) on `feat/layout-pack-import`
+
+There is currently **no merge planned** between these two lines.
+
+Use whichever line fits your needs:
+- Legacy experience: stay on `v1.3.0`
+- New community layout system: use `v1.4.0` releases
+
 ## Screenshots
 
 | Keyboard | AI tools |
@@ -120,14 +133,17 @@ If you want to support Nboard development:
 
 1. Open [Releases](https://github.com/MathieuDvv/Nboard/releases).
 2. Download the latest assets (`.apk` + source `.zip`).
-3. Install on device:
+3. Choose your track:
+   - `NBoard-v1.3.0-release.apk` (legacy line)
+   - `NBoard-v1.4.0-release.apk` (new layout-system line, started as beta)
+4. Install on device:
 
 ```bash
-adb install -r path/to/NBoard-v1.3.0-release.apk
+adb install -r path/to/NBoard-v1.4.0-release.apk
 ```
 
-4. On Android, enable **Nboard** in keyboard settings.
-5. Select **Nboard** as your current keyboard.
+5. On Android, enable **Nboard** in keyboard settings.
+6. Select **Nboard** as your current keyboard.
 
 Minimum Android version: **Android 8.0 (API 26)**.
 
