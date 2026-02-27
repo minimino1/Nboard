@@ -81,7 +81,7 @@ const val KEY_LEARNED_WORD_COUNTS_JSON = "learned_word_counts"
 const val KEY_LEARNED_BIGRAM_COUNTS_JSON = "learned_bigram_counts"
 const val KEY_LEARNED_TRIGRAM_COUNTS_JSON = "learned_trigram_counts"
 
-const val TENOR_API_KEY = "LIVDSRZULELA96"
+val TENOR_API_KEY: String get() = BuildConfig.TENOR_API_KEY
 const val GIF_SEARCH_RESULT_LIMIT = 20
 const val GIF_THUMBNAIL_SIZE_DP = 100
 

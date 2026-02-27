@@ -600,7 +600,8 @@ class NboardImeService : InputMethodService() {
         emojiSearchPill.background = uiDrawable(R.drawable.bg_ai_pill)
         emojiSearchIconButton.background = null
         gifSearchPill.background = uiDrawable(R.drawable.bg_ai_pill)
-        recentClipboardChip.background = uiDrawable(R.drawable.bg_chip)        recentClipboardChevronButton.background = null
+        recentClipboardChip.background = uiDrawable(R.drawable.bg_chip)
+        recentClipboardChevronButton.background = null
         predictionWord1Button.background = uiDrawable(R.drawable.bg_prediction_side_chip)
         predictionWord2Button.background = uiDrawable(R.drawable.bg_chip)
         predictionWord3Button.background = uiDrawable(R.drawable.bg_prediction_side_chip)
