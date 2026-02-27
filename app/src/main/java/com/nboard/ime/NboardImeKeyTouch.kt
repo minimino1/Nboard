@@ -38,7 +38,7 @@ internal fun NboardImeService.configureSpacebarTouch() {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                cursorDragEnabled = !isAiPromptInputActive() && !isEmojiSearchInputActive() && !isClipboardOpen
+                cursorDragEnabled = !isAiPromptInputActive() && !isEmojiSearchInputActive() && !isGifSearchInputActive() && !isClipboardOpen
                 cursorModeActive = false
                 lastRawX = event.rawX
                 downRawX = event.rawX

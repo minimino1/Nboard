@@ -81,6 +81,10 @@ const val KEY_LEARNED_WORD_COUNTS_JSON = "learned_word_counts"
 const val KEY_LEARNED_BIGRAM_COUNTS_JSON = "learned_bigram_counts"
 const val KEY_LEARNED_TRIGRAM_COUNTS_JSON = "learned_trigram_counts"
 
+const val TENOR_API_KEY = "LIVDSRZULELA96"
+const val GIF_SEARCH_RESULT_LIMIT = 20
+const val GIF_THUMBNAIL_SIZE_DP = 100
+
 const val AI_PROMPT_SYSTEM_INSTRUCTION =
     "You are a concise writing assistant. Reply only with the final text. Keep responses short and practical. " +
         "When transforming user text, preserve the original language and do not translate unless the user explicitly asks."

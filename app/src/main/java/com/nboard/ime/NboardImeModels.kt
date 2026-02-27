@@ -12,7 +12,8 @@ internal enum class ShiftMode {
 internal enum class InlineInputTarget {
     NONE,
     AI_PROMPT,
-    EMOJI_SEARCH
+    EMOJI_SEARCH,
+    GIF_SEARCH
 }
 
 internal enum class QuickAiAction {
