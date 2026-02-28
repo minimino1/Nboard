@@ -28,6 +28,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GEMINI_API_KEY", "\"${localProperty("GEMINI_API_KEY")}\"")
+        buildConfigField("String", "TENOR_API_KEY", "\"${localProperty("TENOR_API_KEY").ifBlank { "LIVDSRZULELA96" }}\"")
     }
 
     buildTypes {

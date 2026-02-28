@@ -61,7 +61,7 @@ internal fun NboardImeService.consumeOneShotShiftIfNeeded(committedText: String)
 }
 
 internal fun NboardImeService.refreshAutoShiftFromContext() {
-    if (manualShiftMode != ShiftMode.OFF || isNumbersMode || isEmojiMode || isClipboardOpen || isAiMode) {
+    if (manualShiftMode != ShiftMode.OFF || isNumbersMode || isEmojiMode || isClipboardOpen || isAiMode || isGifMode) {
         isAutoShiftEnabled = false
         return
     }
@@ -102,7 +102,7 @@ internal fun NboardImeService.refreshAutoShiftFromContext() {
 internal fun NboardImeService.refreshAutoShiftFromContextAndRerender(forceRerender: Boolean = false) {
     val previous = isAutoShiftEnabled
     refreshAutoShiftFromContext()
-    if ((forceRerender || previous != isAutoShiftEnabled) && !isNumbersMode && !isEmojiMode && !isClipboardOpen) {
+    if ((forceRerender || previous != isAutoShiftEnabled) && !isNumbersMode && !isEmojiMode && !isClipboardOpen && !isGifMode) {
         renderKeyRows()
     }
     if (isPredictionRowInitialized()) {
@@ -157,6 +157,19 @@ internal fun NboardImeService.deleteOneCharacter() {
         val editable = emojiSearchInput.text
         val start = emojiSearchInput.selectionStart
         val end = emojiSearchInput.selectionEnd
+        if (!editable.isNullOrEmpty() && start >= 0 && end >= 0 && start != end) {
+            val min = minOf(start, end)
+            val max = maxOf(start, end)
+            editable.delete(min, max)
+        } else if (!editable.isNullOrEmpty()) {
+            editable.delete(editable.length - 1, editable.length)
+        }
+        return
+    }
+    if (isGifSearchInputActive()) {
+        val editable = gifSearchInput.text
+        val start = gifSearchInput.selectionStart
+        val end = gifSearchInput.selectionEnd
         if (!editable.isNullOrEmpty() && start >= 0 && end >= 0 && start != end) {
             val min = minOf(start, end)
             val max = maxOf(start, end)
@@ -221,6 +234,10 @@ internal fun NboardImeService.commitKeyText(text: String) {
     }
     if (isEmojiSearchInputActive()) {
         appendEmojiSearchText(text)
+        return
+    }
+    if (isGifSearchInputActive()) {
+        appendGifSearchText(text)
         return
     }
 
@@ -297,4 +314,11 @@ internal fun NboardImeService.appendEmojiSearchText(text: String) {
     val editable = emojiSearchInput.text ?: return
     editable.append(text)
     emojiSearchInput.setSelection(editable.length)
+}
+
+internal fun NboardImeService.appendGifSearchText(text: String) {
+    if (!isGifPanelInitialized()) return
+    val editable = gifSearchInput.text ?: return
+    editable.append(text)
+    gifSearchInput.setSelection(editable.length)
 }

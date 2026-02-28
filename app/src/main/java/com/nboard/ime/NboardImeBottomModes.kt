@@ -11,6 +11,9 @@ internal fun NboardImeService.toggleAiMode() {
     }
     dismissActivePopup()
     isEmojiMode = false
+    isEmojiSearchMode = false
+    isGifMode = false
+    gifSearchJob?.cancel()
     isClipboardOpen = false
     isAiMode = !isAiMode
     if (isAiMode) {
@@ -39,6 +42,14 @@ internal fun NboardImeService.toggleEmojiMode() {
         renderEmojiSuggestions()
     } else {
         isEmojiSearchMode = false
+        isGifMode = false
+        gifSearchJob?.cancel()
+        if (::gifSearchInput.isInitialized) {
+            gifSearchInput.text?.clear()
+        }
+        if (::gifResultsRow.isInitialized) {
+            gifResultsRow.removeAllViews()
+        }
         emojiSearchInput.text?.clear()
         clearInlinePromptFocus()
     }
@@ -62,6 +73,8 @@ internal fun NboardImeService.toggleClipboardMode() {
     dismissActivePopup()
     isEmojiMode = false
     isEmojiSearchMode = false
+    isGifMode = false
+    gifSearchJob?.cancel()
     isAiMode = false
     setGenerating(false)
     clearInlinePromptFocus()
@@ -90,10 +103,11 @@ internal fun NboardImeService.refreshUi() {
     setVisibleAnimated(aiQuickActionsRow, isAiMode)
     setVisibleAnimated(aiPromptRow, isAiMode)
     setVisibleAnimated(clipboardPanel, isClipboardOpen && !isEmojiMode)
-    setVisibleAnimated(emojiPanel, isEmojiMode)
+    setVisibleAnimated(emojiPanel, isEmojiMode && !isGifMode)
+    setVisibleAnimated(gifPanel, isGifMode && isEmojiMode)
     setVisibleAnimated(recentClipboardRow, shouldShowRecentClipboardRow())
     setVisibleAnimated(predictionRow, shouldShowPredictionRow() && hasPredictionSuggestions)
-    setVisibleAnimated(keyRowsContainer, !isClipboardOpen && (!isEmojiMode || isEmojiSearchMode))
+    setVisibleAnimated(keyRowsContainer, !isClipboardOpen && (!isEmojiMode || isEmojiSearchMode || isGifMode))
 
     val gboardLayout = isGboardLayoutActive()
     setVisibleAnimated(modeSwitchButton, gboardLayout || !isClipboardOpen)
@@ -105,9 +119,9 @@ internal fun NboardImeService.refreshUi() {
     applyBottomRowLayoutForClipboard(isClipboardOpen)
 
     modeSwitchButton.text = if (isNumbersMode || isEmojiMode) "ABC" else "123"
-    emojiSearchPill.isVisible = isEmojiMode && isEmojiSearchMode
-    emojiSuggestionsScroll.isVisible = isEmojiMode && isEmojiSearchMode
-    emojiGridScroll.isVisible = isEmojiMode && !isEmojiSearchMode
+    emojiSearchPill.isVisible = isEmojiMode && isEmojiSearchMode && !isGifMode
+    emojiSuggestionsScroll.isVisible = isEmojiMode && isEmojiSearchMode && !isGifMode
+    emojiGridScroll.isVisible = isEmojiMode && !isEmojiSearchMode && !isGifMode
 
     if (gboardLayout) {
         aiModeButton.alpha = if (isEmojiMode || isBottomModeSelected(leftBottomMode)) 1f else 0.84f
@@ -124,7 +138,11 @@ internal fun NboardImeService.refreshUi() {
     if (isEmojiMode) {
         setIcon(aiModeButton, R.drawable.ic_search_lucide, R.color.ai_text)
         if (!gboardLayout) {
-            setIcon(clipboardButton, R.drawable.ic_smile_lucide, R.color.key_text)
+            if (isGifMode) {
+                setIcon(clipboardButton, R.drawable.ic_smile_lucide, R.color.key_text)
+            } else {
+                setIcon(clipboardButton, R.drawable.ic_gif_lucide, R.color.key_text)
+            }
         }
     }
 
@@ -233,7 +251,7 @@ internal fun NboardImeService.updateModeSelectionVisuals() {
         )
         styleModeButton(
             button = clipboardButton,
-            selected = true,
+            selected = isGifMode,
             selectedBackgroundRes = R.drawable.bg_mode_special_selected,
             normalBackgroundRes = R.drawable.bg_special_key
         )
@@ -316,6 +334,9 @@ internal fun NboardImeService.setGenerating(generating: Boolean) {
     aiExpandButton.isEnabled = aiAllowed && !generating
     emojiSearchInput.isEnabled = !generating
     emojiSearchIconButton.isEnabled = !generating
+    if (::gifSearchInput.isInitialized) {
+        gifSearchInput.isEnabled = !generating
+    }
     recentClipboardChip.isEnabled = !generating
     recentClipboardChevronButton.isEnabled = !generating
     syncAiProcessingAnimations()

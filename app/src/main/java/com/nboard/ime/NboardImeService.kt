@@ -53,6 +53,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
@@ -117,6 +118,14 @@ class NboardImeService : InputMethodService() {
     internal lateinit var emojiGridRow2: LinearLayout
     internal lateinit var emojiGridRow3: LinearLayout
 
+    internal lateinit var gifPanel: LinearLayout
+    internal lateinit var gifSearchPill: LinearLayout
+    internal lateinit var gifSearchInput: EditText
+    internal lateinit var gifLoadingIndicator: ProgressBar
+    internal lateinit var gifResultsScroll: HorizontalScrollView
+    internal lateinit var gifResultsRow: LinearLayout
+    internal lateinit var gifAttributionLabel: TextView
+
     internal lateinit var recentClipboardRow: LinearLayout
     internal lateinit var recentClipboardChip: AppCompatButton
     internal lateinit var recentClipboardChevronButton: ImageButton
@@ -152,6 +161,8 @@ class NboardImeService : InputMethodService() {
     internal var isSymbolsSubmenuOpen = false
     internal var isEmojiMode = false
     internal var isEmojiSearchMode = false
+    internal var isGifMode = false
+    internal var gifSearchJob: Job? = null
     internal var inlineInputTarget = InlineInputTarget.NONE
 
     internal var leftBottomMode = BottomKeyMode.AI
@@ -313,6 +324,8 @@ class NboardImeService : InputMethodService() {
         val newPackage = editorInfo?.packageName
         if (newPackage != activeEditorPackage) {
             isEmojiSearchMode = false
+            isGifMode = false
+            gifSearchJob?.cancel()
         }
         activeEditorPackage = newPackage
     }
@@ -354,6 +367,8 @@ class NboardImeService : InputMethodService() {
         isSymbolsSubmenuOpen = false
         isEmojiMode = false
         isEmojiSearchMode = false
+        isGifMode = false
+        gifSearchJob?.cancel()
         manualShiftMode = ShiftMode.OFF
         isAutoShiftEnabled = true
         lastShiftTapAtMs = 0L
@@ -363,6 +378,9 @@ class NboardImeService : InputMethodService() {
         pendingAutoInsertedSentenceSpace = false
         if (::emojiSearchInput.isInitialized) {
             emojiSearchInput.text?.clear()
+        }
+        if (::gifSearchInput.isInitialized) {
+            gifSearchInput.text?.clear()
         }
         if (::aiPromptInput.isInitialized) {
             aiPromptInput.text?.clear()
@@ -436,7 +454,7 @@ class NboardImeService : InputMethodService() {
             candidatesStart,
             candidatesEnd
         )
-        if (isAiPromptInputActive() || isEmojiSearchInputActive()) {
+        if (isAiPromptInputActive() || isEmojiSearchInputActive() || isGifSearchInputActive()) {
             clearInlinePromptFocus()
         }
         if (::row1.isInitialized) {
@@ -478,6 +496,8 @@ class NboardImeService : InputMethodService() {
         }
         if (!hasEmojiSlot()) {
             isEmojiMode = false
+            isGifMode = false
+            gifSearchJob?.cancel()
         }
     }
 
@@ -510,6 +530,14 @@ class NboardImeService : InputMethodService() {
         emojiGridRow1 = root.findViewById(R.id.emojiGridRow1)
         emojiGridRow2 = root.findViewById(R.id.emojiGridRow2)
         emojiGridRow3 = root.findViewById(R.id.emojiGridRow3)
+
+        gifPanel = root.findViewById(R.id.gifPanel)
+        gifSearchPill = root.findViewById(R.id.gifSearchPill)
+        gifSearchInput = root.findViewById(R.id.gifSearchInput)
+        gifLoadingIndicator = root.findViewById(R.id.gifLoadingIndicator)
+        gifResultsScroll = root.findViewById(R.id.gifResultsScroll)
+        gifResultsRow = root.findViewById(R.id.gifResultsRow)
+        gifAttributionLabel = root.findViewById(R.id.gifAttributionLabel)
 
         recentClipboardRow = root.findViewById(R.id.recentClipboardRow)
         recentClipboardChip = root.findViewById(R.id.recentClipboardChip)
@@ -571,6 +599,7 @@ class NboardImeService : InputMethodService() {
         actionButton.background = uiDrawable(R.drawable.bg_special_key)
         emojiSearchPill.background = uiDrawable(R.drawable.bg_ai_pill)
         emojiSearchIconButton.background = null
+        gifSearchPill.background = uiDrawable(R.drawable.bg_ai_pill)
         recentClipboardChip.background = uiDrawable(R.drawable.bg_chip)
         recentClipboardChevronButton.background = null
         predictionWord1Button.background = uiDrawable(R.drawable.bg_prediction_side_chip)
@@ -589,6 +618,7 @@ class NboardImeService : InputMethodService() {
         applySerifTypeface(aiExpandButton)
         applyInterTypeface(aiPromptInput)
         applyInterTypeface(emojiSearchInput)
+        applyInterTypeface(gifSearchInput)
         applyInterTypeface(recentClipboardChip)
         applyInterTypeface(predictionWord1Button)
         applyInterTypeface(predictionWord2Button)
@@ -621,6 +651,9 @@ class NboardImeService : InputMethodService() {
         aiPromptInput.setHintTextColor(uiColor(R.color.ai_hint))
         emojiSearchInput.setTextColor(uiColor(R.color.ai_text))
         emojiSearchInput.setHintTextColor(uiColor(R.color.ai_hint))
+        gifSearchInput.setTextColor(uiColor(R.color.ai_text))
+        gifSearchInput.setHintTextColor(uiColor(R.color.ai_hint))
+        gifAttributionLabel.setTextColor(uiColor(R.color.key_text))
 
         modeSwitchButton.contentDescription = "Switch layout"
         leftPunctuationButton.contentDescription = "Adaptive punctuation key"
@@ -630,6 +663,7 @@ class NboardImeService : InputMethodService() {
         actionButton.contentDescription = "Action"
         aiPromptToggleButton.contentDescription = "Toggle AI mode"
         emojiSearchIconButton.contentDescription = "Search emoji"
+        gifSearchInput.hint = "Search GIFs"
         recentClipboardChip.contentDescription = "Paste recent clipboard"
         recentClipboardChevronButton.contentDescription = "Dismiss recent clipboard"
 
@@ -661,6 +695,7 @@ class NboardImeService : InputMethodService() {
         flattenView(clipboardButton)
         flattenView(actionButton)
         flattenView(emojiSearchIconButton)
+        flattenView(gifSearchInput)
         flattenView(recentClipboardChip)
         flattenView(recentClipboardChevronButton)
         flattenView(predictionWord1Button)
@@ -722,6 +757,23 @@ class NboardImeService : InputMethodService() {
         renderEmojiGrid()
         renderEmojiSuggestions()
         renderRecentClipboardRow()
+
+        gifSearchInput.doAfterTextChanged { text ->
+            if (isGifMode) {
+                searchGifs(text?.toString().orEmpty())
+            }
+        }
+        gifSearchInput.setOnFocusChangeListener { _, hasFocus ->
+            when {
+                hasFocus && isGifSearchActive() -> inlineInputTarget = InlineInputTarget.GIF_SEARCH
+                !hasFocus && inlineInputTarget == InlineInputTarget.GIF_SEARCH -> inlineInputTarget = InlineInputTarget.NONE
+            }
+        }
+        gifSearchInput.setOnClickListener {
+            if (isGifSearchActive()) {
+                inlineInputTarget = InlineInputTarget.GIF_SEARCH
+            }
+        }
     }
 
     private fun bindListeners() {
@@ -730,6 +782,10 @@ class NboardImeService : InputMethodService() {
             if (isEmojiMode) {
                 isEmojiMode = false
                 isEmojiSearchMode = false
+                isGifMode = false
+                gifSearchJob?.cancel()
+                gifSearchInput.text?.clear()
+                gifResultsRow.removeAllViews()
                 isNumbersMode = false
                 isSymbolsSubmenuOpen = false
                 clearInlinePromptFocus()
@@ -841,7 +897,7 @@ class NboardImeService : InputMethodService() {
             tapOnDown = false
         ) {
             if (isEmojiMode) {
-                toggleEmojiMode()
+                toggleGifMode()
                 return@configureKeyTouch
             }
             if (isGboardLayoutActive()) {
@@ -1560,6 +1616,9 @@ class NboardImeService : InputMethodService() {
         if (::emojiSearchInput.isInitialized) {
             emojiSearchInput.clearFocus()
         }
+        if (::gifSearchInput.isInitialized) {
+            gifSearchInput.clearFocus()
+        }
         if (::keyboardRoot.isInitialized) {
             keyboardRoot.isFocusableInTouchMode = true
             keyboardRoot.requestFocus()
@@ -1675,7 +1734,6 @@ class NboardImeService : InputMethodService() {
     internal fun isEmojiGridInitialized(): Boolean = this::emojiGridRow1.isInitialized
 
     internal fun isEmojiMostUsedRowInitialized(): Boolean = this::emojiMostUsedRow.isInitialized
-
     internal fun isPredictionRowInitialized(): Boolean = this::predictionRow.isInitialized
 
     internal fun isBigramPredictorInitialized(): Boolean = this::bigramPredictor.isInitialized

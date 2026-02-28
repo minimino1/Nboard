@@ -276,6 +276,77 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/gifPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/gifSearchPill"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_ai_pill"
+            android:gravity="center_vertical"
+            android:minHeight="60dp"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <EditText
+                android:id="@+id/gifSearchInput"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:fontFamily="@font/inter_variable"
+                android:hint="Search GIFs"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:textColor="@color/ai_text"
+                android:textColorHint="@color/ai_hint"
+                android:textSize="14sp" />
+
+            <ProgressBar
+                android:id="@+id/gifLoadingIndicator"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="8dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:id="@+id/gifResultsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:overScrollMode="never"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/gifResultsRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <TextView
+            android:id="@+id/gifAttributionLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="4dp"
+            android:alpha="0.5"
+            android:fontFamily="@font/inter_variable"
+            android:text="Powered by Tenor"
+            android:textColor="@color/key_text"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/recentClipboardRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
